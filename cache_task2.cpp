@@ -41,6 +41,89 @@ using namespace std;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
+class Bus_if : public virtual sc_inferface
+{
+	public:
+		virtual bool read(int writer, int adder) = 0;
+		virtual bool write(int writer, int adder, int data) = 0;
+}
+
+
+class Bus : public Bus_if, public sc_module
+{
+	public:
+		// ports
+		sc_in<bool> Port_CLK;
+		sc_out<Cache::Function> Port_BusValid,
+		sc_out<int> Port_BusWriter;
+
+		sc_signal_rv<32> Port_BusAddr;
+		
+		sc_mutex bus;
+		
+		long waits;
+		long reads;
+		long writes;
+	public:
+		SC_CTOR(Bus)
+		{
+			// Handle Port_CLK to simulate delay
+			// Initialize some bus properties
+			sensitive << Port_CLK.pos();
+
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			waits = 0;
+			reads = 0;
+			writes = 0; 
+		}
+		virtual bool read(int writer, int addr)
+		{
+			while(bus.trylock() == -1){
+				waits++;
+				wait();
+			
+			}
+			reads++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusValid.write(Cache::FUNC_READ);
+							
+			//wait for everyone to revieve
+			wait();
+			Port_BusValid.write(Cache::FUNC_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			bus_unlock();
+		
+			return true;
+			
+		}
+		
+		virtual bool write(int writer, int addr, int data)
+		{
+			while(bus.trylock() == -1){
+				waits++;
+				wait();
+			}
+			
+			writes++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusValid.write(Cache::FUNC_WRITE);
+
+			wait();
+			Port_BusValid.write(Cache::FUNC_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			bus_unlock();
+
+			return true;
+		}
+}
+
 
 
 typedef	struct 
@@ -68,6 +151,7 @@ SC_MODULE(Cache)
 
 		enum Function 
 		{
+			FUNC_INVALID,
 			FUNC_READ,
 			FUNC_WRITE
 		};
@@ -88,6 +172,16 @@ SC_MODULE(Cache)
 		sc_out<bool>     Port_Wr_Func;
 		sc_out<int> 	Port_Hit_Line;
 		sc_out<int> 	Port_Replace_Line;
+
+
+		sc_out<int> 		Port_BusWriter;
+		sc_signal_rv<32> 	Port_BusAddr;
+		sc_out<Cache::Function> Port_BusValid;
+		
+		sc_port<Bus_if>		Port_Bus;
+		
+		int cache_id;	
+		int snooping;
 
 		SC_CTOR(Cache) 
 		{
@@ -127,6 +221,34 @@ SC_MODULE(Cache)
 
 			return binstr ; 
 		} 
+
+		void snoop()
+		{
+			int f = 0;
+
+			while(snooping)
+			{
+				wait(Port_BusValid.value_changed_event());
+
+				switch(Port_BusValid.read())
+				{
+					case FUNC_WRITE:
+						f= Port_BusAddr.read().to_int();
+						break;
+
+					case FUNC_READ:
+						f= Port_BusAddr.read().to_int();
+						break;
+
+					default:
+						cout<<"something wrong."<<endl;
+						break;
+
+				}
+
+			}
+
+		}
 
 		void execute() 
 		{
@@ -184,9 +306,12 @@ SC_MODULE(Cache)
 
 					cout << sc_time_stamp() << ": MEM received write" << endl;
 					if (hit){ //write hit
+
+						Port_Bus -> write(cache_id, addr, cpu_data);//issue bus write for a write hit 
+						stats_writehit(cache_id);
+
 						Port_Hit.write(true);
 						Port_Hit_Line.write(hit_set);
-						stats_writehit(0);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						c_line -> data[word_index] = cpu_data;
@@ -209,8 +334,10 @@ SC_MODULE(Cache)
 					}
 					else //write miss
 					{		
+						Port_Bus -> write(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+						stats_writemiss(cache_id);
+
 						Port_Hit.write(false);
-						stats_writemiss(0);
 						cout << sc_time_stamp() << ": Cache write miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
@@ -326,9 +453,10 @@ SC_MODULE(Cache)
 					cout << sc_time_stamp() << ": MEM received read" << endl;
 
 					if (hit){ //read hit
+						stats_readhit(cache_id);// do nothing for a read hit.
+								
 						Port_Hit.write(true);
 						Port_Hit_Line.write(hit_set);
-						stats_readhit(0);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						Port_Data.write( c_line -> data[word_index] );
@@ -351,8 +479,10 @@ SC_MODULE(Cache)
 					}
 					else //read miss
 					{		
+						Port_Bus -> read(cache_id, addr); // issue a bus read for a read miss
+						stats_readmiss(cache_id);
+
 						Port_Hit.write(false);
-						stats_readmiss(0);
 						cout << sc_time_stamp() << ": Cache read miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
