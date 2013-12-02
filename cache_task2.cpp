@@ -39,15 +39,38 @@ using namespace std;
 
 //static const int MEM_SIZE = 512;
 
+#define NUM_CPUS 12
+
 #define CACHE_SETS 8
 #define CACHE_LINES 128
-class Bus_if : public virtual sc_inferface
+
+typedef	struct 
 {
+	bool valid;
+	sc_uint<20> tag;
+	//sc_int<8> data[32]; //32 byte line size 
+	int data[8]; //8 words = 32 byte line size 
+} aca_cache_line;
+
+typedef	struct 
+{
+	aca_cache_line cache_line[CACHE_LINES];
+} aca_cache_set; 
+
+typedef	struct
+{
+	aca_cache_set cache_set[CACHE_SETS];
+} aca_cache;
+
+class Bus_if;
+class Bus_if : public virtual sc_inferface{
+
 	public:
-		virtual bool read(int writer, int adder) = 0;
-		virtual bool write(int writer, int adder, int data, int type) = 0;
-		virtual bool writex(int writer, int adder, int data, int type) = 0;
-}
+		virtual bool read(int writer, int address) = 0;
+		virtual bool write(int writer, int address, int data) = 0;
+		virtual bool writex(int writer, int address, int data) = 0;
+};
+
 
 
 class Bus : public Bus_if, public sc_module
@@ -64,10 +87,10 @@ class Bus : public Bus_if, public sc_module
 
 		// ports
 		sc_in<bool> Port_CLK;
-		sc_out<BUS_REQ> Port_BusValid;
+		sc_out<BUS_REQ> Port_BusReq;
 		sc_out<int> Port_BusWriter;
 
-		sc_signal_rv<32> Port_BusAddr;
+		sc_inout_rv<32> Port_BusAddr;
 
 		sc_mutex bus;
 
@@ -98,14 +121,14 @@ class Bus : public Bus_if, public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusValid.write(BUS_RD);
+			Port_BusReq.write(BUS_RD);
 
 			//wait for everyone to revieve
 			wait();
-			Port_BusValid.write(BUS_INVALID);
+			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
-			bus_unlock();
+			bus.unlock();
 
 			return true;
 
@@ -122,13 +145,13 @@ class Bus : public Bus_if, public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusValid.write(BUS_WR);
+			Port_BusReq.write(BUS_WR);
 
 			wait();
-			Port_BusValid.write(BUS_INVALID);
+			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
-			bus_unlock();
+			bus.unlock();
 
 			return true;
 		}
@@ -144,38 +167,18 @@ class Bus : public Bus_if, public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusValid.write(BUS_RDX);
+			Port_BusReq.write(BUS_RDX);
 
 			wait();
-			Port_BusValid.write(BUS_INVALID);
+			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
-			bus_unlock();
+			bus.unlock();
 
 			return true;
 		}
 
-}
-
-
-
-typedef	struct 
-{
-	bool valid;
-	sc_uint<20> tag;
-	//sc_int<8> data[32]; //32 byte line size 
-	int data[8]; //8 words = 32 byte line size 
-} aca_cache_line;
-
-typedef	struct 
-{
-	aca_cache_line cache_line[CACHE_LINES];
-} aca_cache_set; 
-
-typedef	struct
-{
-	aca_cache_set cache_set[CACHE_SETS];
-} aca_cache;
+};
 
 SC_MODULE(Cache) 
 {
@@ -199,16 +202,16 @@ SC_MODULE(Cache)
 		sc_in<int>      Port_Addr;
 		sc_out<RetCode> Port_Done;
 		sc_inout_rv<32> Port_Data;
-		sc_out<bool> 	Port_Hit;
-		sc_out<bool>     Port_Wr_Done;
-		sc_out<bool>     Port_Wr_Func;
-		sc_out<int> 	Port_Hit_Line;
-		sc_out<int> 	Port_Replace_Line;
+		//sc_out<bool> 	Port_Hit;
+		//sc_out<bool>     Port_Wr_Done;
+		//sc_out<bool>     Port_Wr_Func;
+		//sc_out<int> 	Port_Hit_Line;
+		//sc_out<int> 	Port_Replace_Line;
 
 
 		sc_out<int> 		Port_BusWriter;
-		sc_signal_rv<32> 	Port_BusAddr;
-		sc_out<Bus::BUS_REQ> 	Port_BusValid;
+		sc_inout_rv<32> 	Port_BusAddr;
+		sc_out<Bus::BUS_REQ> 	Port_BusReq;
 
 		sc_port<Bus_if>		Port_Bus;
 
@@ -260,8 +263,8 @@ SC_MODULE(Cache)
 
 			while(snooping)
 			{
-				wait(Port_BusValid.value_changed_event());
-				if(Port_BusWriter.read().to_int() != cache_id){
+				wait(Port_BusReq.value_changed_event());
+				if(Port_BusWriter.read() != cache_id){
 					
 					int addr= Port_BusAddr.read().to_int();
 					aca_cache_line *c_line;
@@ -270,9 +273,9 @@ SC_MODULE(Cache)
 					line_index = (addr & 0x00000FE0) >> 5;
 					tag = addr >> 12;
 					
-					switch(Port_BusValid.read())
+					switch(Port_BusReq.read())
 					{
-						case BUS_RD:
+						case Bus::BUS_RD:
 							/* do nothing
 							for ( int i=0; i <CACHE_SETS; i++ ){
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
@@ -286,9 +289,9 @@ SC_MODULE(Cache)
 								}
 							 */
 							break;
-						case BUS_RDX:
+						case Bus::BUS_RDX:
 							
-						case BUS_WR:
+						case Bus::BUS_WR:
 							for ( int i=0; i <CACHE_SETS; i++ ){
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
 								if (c_line -> valid == true){
@@ -323,7 +326,7 @@ SC_MODULE(Cache)
 
 				Function f = Port_Func.read();
 				int addr   = Port_Addr.read();
-				Port_Wr_Func.write(f);
+				//Port_Wr_Func.write(f);
 				//int *data;
 				aca_cache_line *c_line;
 				sc_uint<20> tag = 0;
@@ -373,8 +376,8 @@ SC_MODULE(Cache)
 						Port_Bus -> write(cache_id, addr, cpu_data);//issue bus write for a write hit 
 						stats_writehit(cache_id);
 
-						Port_Hit.write(true);
-						Port_Hit_Line.write(hit_set);
+						//Port_Hit.write(true);
+						//Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						c_line -> data[word_index] = cpu_data;
@@ -401,7 +404,7 @@ SC_MODULE(Cache)
 						Port_Bus -> writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
 						stats_writemiss(cache_id);
 
-						Port_Hit.write(false);
+						//Port_Hit.write(false);
 						cout << sc_time_stamp() << ": Cache write miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
@@ -474,7 +477,7 @@ SC_MODULE(Cache)
 								}
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
-								Port_Replace_Line.write(set_index_toreplace);
+								//Port_Replace_Line.write(set_index_toreplace);
 								
 								/*no needed becuase every time we write to cache, we also write back to memory 
 								for(int i=0; i<8;i++)//write the cache line back to the memory
@@ -514,7 +517,7 @@ SC_MODULE(Cache)
 						wait(100);
 
 					Port_Done.write( RET_WRITE_DONE );
-					Port_Wr_Done.write ( RET_WRITE_DONE );
+					//Port_Wr_Done.write ( RET_WRITE_DONE );
 
 					//cout << sc_time_stamp() << ": MEM received write" << endl;
 					//data = Port_Data.read().to_int();
@@ -526,8 +529,8 @@ SC_MODULE(Cache)
 					if (hit){ //read hit
 						stats_readhit(cache_id);// do nothing for a read hit.
 
-						Port_Hit.write(true);
-						Port_Hit_Line.write(hit_set);
+						//Port_Hit.write(true);
+						//Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						Port_Data.write( c_line -> data[word_index] );
@@ -553,7 +556,7 @@ SC_MODULE(Cache)
 						Port_Bus -> read(cache_id, addr); // issue a bus read for a read miss
 						stats_readmiss(cache_id);
 
-						Port_Hit.write(false);
+						//Port_Hit.write(false);
 						cout << sc_time_stamp() << ": Cache read miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
@@ -620,7 +623,7 @@ SC_MODULE(Cache)
 								}
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
-								Port_Replace_Line.write(set_index_toreplace);
+								//Port_Replace_Line.write(set_index_toreplace);
 
 								//write back the previous line to mem 
 								for(int i=0; i<8;i++)//write the cache line back to the memory
@@ -657,7 +660,7 @@ SC_MODULE(Cache)
 
 
 					//wait();
-					Port_Wr_Done.write ( RET_READ_DONE );
+					//Port_Wr_Done.write ( RET_READ_DONE );
 					Port_Done.write( RET_READ_DONE );
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
@@ -707,6 +710,7 @@ SC_MODULE(CPU)
 		sc_out<Cache::Function> Port_MemFunc;
 		sc_out<int>                Port_MemAddr;
 		sc_inout_rv<32>            Port_MemData;
+		int cpu_id;
 
 		SC_CTOR(CPU) 
 		{
@@ -817,7 +821,7 @@ int sc_main(int argc, char* argv[])
 
 		// Initialize statistics counters
 		stats_init();
-
+#if 0
 		// Instantiate Modules
 		Cache mem("main_memory");
 		CPU    cpu("cpu");
@@ -853,6 +857,71 @@ int sc_main(int argc, char* argv[])
 
 		mem.Port_CLK(clk);
 		cpu.Port_CLK(clk);
+#endif
+
+
+		int snooping = 1;
+		Bus bus("mem_bus");
+
+		sc_signal<int> sigBusWriter;
+		sc_signal<Bus::BUS_REQ> sigBusReq;
+		sc_signal_rv<32> sigBusAddr;
+	
+		bus.Port_BusAddr(sigBusAddr);	
+		bus.Port_BusWriter(sigBusWriter);
+		bus.Port_BusReq(sigBusReq);
+
+		sc_buffer<Cache::Function> sigMemFunc[NUM_CPUS];
+		sc_signal<int>              sigMemAddr[NUM_CPUS];
+		sc_signal_rv<32>            sigMemData[NUM_CPUS];
+		sc_buffer<Cache::RetCode>  sigMemDone[NUM_CPUS];
+		sc_clock clk;
+		
+		Cache *cache[NUM_CPUS];
+		CPU   *cpu[NUM_CPUS];
+
+		for(int i = 0; i < NUM_CPUS; i++)
+		{
+			char name_cache[NUM_CPUS];
+			char name_cpu[NUM_CPUS];
+
+			sprintf(name_cache, "cache_%d", i);
+			sprintf(name_cpu, "cpu_%d", i);
+			
+			/* Create objects for Cache and CPU */	
+			cache[i] = new Cache(name_cache);
+			cpu[i] = new CPU(name_cpu);
+			
+			/* Set IDs */
+			cpu[i]->cpu_id = i;
+			cache[i]->cache_id = i;
+			cache[i]->snooping = snooping;
+
+			/* Connect Cache to Bus */
+			cache[i]->Port_BusAddr(sigBusAddr);	
+			cache[i]->Port_BusWriter(sigBusWriter);	
+			cache[i]->Port_BusReq(sigBusReq);	
+			cache[i]->Port_Bus(bus);
+
+			/* Connect Cache to CPU */
+			cache[i]->Port_Func(sigMemFunc[i]);	
+			cache[i]->Port_Addr(sigMemAddr[i]);	
+			cache[i]->Port_Data(sigMemData[i]);	
+			cache[i]->Port_Done(sigMemDone[i]);	
+			
+			/* Connect CPu to Cache */
+			cpu[i]->Port_MemFunc(sigMemFunc[i]);	
+			cpu[i]->Port_MemAddr(sigMemAddr[i]);	
+			cpu[i]->Port_MemData(sigMemData[i]);	
+			cpu[i]->Port_MemDone(sigMemDone[i]);	
+
+			/* Connect clocks */
+			cache[i]->Port_CLK(clk);
+			cpu[i]->Port_CLK(clk);
+
+		}
+
+
 
 		cout << "Running (press CTRL+C to interrupt)... " << endl;
 
@@ -864,10 +933,10 @@ int sc_main(int argc, char* argv[])
 		sc_trace(wf, sigMemAddr, "addr");
 		sc_trace(wf, sigMemData, "data");
 		//sc_trace(wf, sigMemWr_Done, "wr_done");
-		sc_trace(wf, sigMemWr_Func, "wr_func"); //function issued by cpu
-		sc_trace(wf, sigMemHit, "Hit");
-		sc_trace(wf, sigMemHitLine, "Hit_line");// show which set of cache line is hit
-		sc_trace(wf, sigMemReplaceLine, "replace_line"); //show which set of cache line is replaced
+		//sc_trace(wf, sigMemWr_Func, "wr_func"); //function issued by cpu
+		//sc_trace(wf, sigMemHit, "Hit");
+		//sc_trace(wf, sigMemHitLine, "Hit_line");// show which set of cache line is hit
+		//sc_trace(wf, sigMemReplaceLine, "replace_line"); //show which set of cache line is replaced
 
 
 		// Start Simulation
@@ -878,7 +947,6 @@ int sc_main(int argc, char* argv[])
 		// Print statistics after simulation finished
 		stats_print();
 	}
-
 	catch (exception& e)
 	{
 		cerr << e.what() << endl;
