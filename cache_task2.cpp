@@ -45,22 +45,32 @@ class Bus_if : public virtual sc_inferface
 {
 	public:
 		virtual bool read(int writer, int adder) = 0;
-		virtual bool write(int writer, int adder, int data) = 0;
+		virtual bool write(int writer, int adder, int data, int type) = 0;
+		virtual bool writex(int writer, int adder, int data, int type) = 0;
 }
 
 
 class Bus : public Bus_if, public sc_module
 {
+
 	public:
+		enum BUS_REQ 
+		{
+			BUS_RD,
+			BUS_WR,
+			BUS_RDX,//-> seems have same response with BUS_WR
+			BUS_INVALID
+		};
+
 		// ports
 		sc_in<bool> Port_CLK;
-		sc_out<Cache::Function> Port_BusValid,
+		sc_out<BUS_REQ> Port_BusValid;
 		sc_out<int> Port_BusWriter;
 
 		sc_signal_rv<32> Port_BusAddr;
-		
+
 		sc_mutex bus;
-		
+
 		long waits;
 		long reads;
 		long writes;
@@ -82,46 +92,69 @@ class Bus : public Bus_if, public sc_module
 			while(bus.trylock() == -1){
 				waits++;
 				wait();
-			
+
 			}
 			reads++;
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusValid.write(Cache::FUNC_READ);
-							
+			Port_BusValid.write(BUS_RD);
+
 			//wait for everyone to revieve
 			wait();
-			Port_BusValid.write(Cache::FUNC_INVALID);
+			Port_BusValid.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			bus_unlock();
-		
+
 			return true;
-			
+
 		}
-		
-		virtual bool write(int writer, int addr, int data)
+
+		virtual bool write(int writer, int addr, int data) 
 		{
 			while(bus.trylock() == -1){
 				waits++;
 				wait();
 			}
-			
+
 			writes++;
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusValid.write(Cache::FUNC_WRITE);
+			Port_BusValid.write(BUS_WR);
 
 			wait();
-			Port_BusValid.write(Cache::FUNC_INVALID);
+			Port_BusValid.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			bus_unlock();
 
 			return true;
 		}
+
+		virtual bool writex(int writer, int addr, int data) 
+		{
+			while(bus.trylock() == -1){
+				waits++;
+				wait();
+			}
+
+			writes++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusValid.write(BUS_RDX);
+
+			wait();
+			Port_BusValid.write(BUS_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			bus_unlock();
+
+			return true;
+		}
+
 }
 
 
@@ -151,7 +184,6 @@ SC_MODULE(Cache)
 
 		enum Function 
 		{
-			FUNC_INVALID,
 			FUNC_READ,
 			FUNC_WRITE
 		};
@@ -176,16 +208,17 @@ SC_MODULE(Cache)
 
 		sc_out<int> 		Port_BusWriter;
 		sc_signal_rv<32> 	Port_BusAddr;
-		sc_out<Cache::Function> Port_BusValid;
-		
+		sc_out<Bus::BUS_REQ> 	Port_BusValid;
+
 		sc_port<Bus_if>		Port_Bus;
-		
+
 		int cache_id;	
 		int snooping;
 
 		SC_CTOR(Cache) 
 		{
 			SC_THREAD(execute);
+			SC_THREAD(snoop);
 			sensitive << Port_CLK.pos();
 			dont_initialize();
 
@@ -224,26 +257,56 @@ SC_MODULE(Cache)
 
 		void snoop()
 		{
-			int f = 0;
 
 			while(snooping)
 			{
 				wait(Port_BusValid.value_changed_event());
+				if(Port_BusWriter.read().to_int() != cache_id){
+					
+					int addr= Port_BusAddr.read().to_int();
+					aca_cache_line *c_line;
+					sc_uint<20> tag = 0;
+					unsigned int line_index;
+					line_index = (addr & 0x00000FE0) >> 5;
+					tag = addr >> 12;
+					
+					switch(Port_BusValid.read())
+					{
+						case BUS_RD:
+							/* do nothing
+							for ( int i=0; i <CACHE_SETS; i++ ){
+								c_line = &(cache->cache_set[i].cache_line[line_index]);
+								if (c_line -> valid == true){
+									if ( c_line -> tag == tag){
+										//flush data to the bus
 
-				switch(Port_BusValid.read())
-				{
-					case FUNC_WRITE:
-						f= Port_BusAddr.read().to_int();
-						break;
+										}
 
-					case FUNC_READ:
-						f= Port_BusAddr.read().to_int();
-						break;
+									}
+								}
+							 */
+							break;
+						case BUS_RDX:
+							
+						case BUS_WR:
+							for ( int i=0; i <CACHE_SETS; i++ ){
+								c_line = &(cache->cache_set[i].cache_line[line_index]);
+								if (c_line -> valid == true){
+									if ( c_line -> tag == tag){
+										c_line -> valid = false;
+									}
 
-					default:
-						cout<<"something wrong."<<endl;
-						break;
+								}
+							}
 
+							break;
+
+
+						default:
+							cout<<"a invalid command was issued in the end"<<endl;
+							break;
+
+					}
 				}
 
 			}
@@ -331,10 +394,11 @@ SC_MODULE(Cache)
 							default: cout << "Damn here !!!!" << endl;
 
 						}
+						
 					}
 					else //write miss
 					{		
-						Port_Bus -> write(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+						Port_Bus -> writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
 						stats_writemiss(cache_id);
 
 						Port_Hit.write(false);
@@ -411,10 +475,12 @@ SC_MODULE(Cache)
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
 								Port_Replace_Line.write(set_index_toreplace);
-
+								
+								/*no needed becuase every time we write to cache, we also write back to memory 
 								for(int i=0; i<8;i++)//write the cache line back to the memory
 									wait(100);
-
+								 */
+								
 								// write allocate
 								for (int i = 0; i< 8; i++){
 									wait(100); //fetch 8 * words data from memory to cache
@@ -438,10 +504,15 @@ SC_MODULE(Cache)
 									default: cout << "Buggy here !!!!! should not come here" <<endl; 
 
 								}	
+
 							}
 #endif
 						}
 					}
+					//adding this becuase of write through
+					for(int i=0; i<8;i++)//write the cache line back to the memory for both write his and miss
+						wait(100);
+
 					Port_Done.write( RET_WRITE_DONE );
 					Port_Wr_Done.write ( RET_WRITE_DONE );
 
@@ -454,7 +525,7 @@ SC_MODULE(Cache)
 
 					if (hit){ //read hit
 						stats_readhit(cache_id);// do nothing for a read hit.
-								
+
 						Port_Hit.write(true);
 						Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
@@ -550,7 +621,7 @@ SC_MODULE(Cache)
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
 								Port_Replace_Line.write(set_index_toreplace);
-	
+
 								//write back the previous line to mem 
 								for(int i=0; i<8;i++)//write the cache line back to the memory
 									wait(100);
