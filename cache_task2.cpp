@@ -70,10 +70,18 @@ typedef	struct
 	aca_cache_set cache_set[CACHE_SETS];
 } aca_cache;
 
+#if 1
+class Bus_if : public virtual sc_core::sc_interface
+{
+	public:
+		virtual bool read(int writer, int address) = 0;
+		virtual bool write(int writer, int address, int data) = 0;
+		virtual bool writex(int writer, int address, int data) = 0;
+};
+#endif
 
 
-
-class Bus : public Bus_if, public sc_module
+class Bus : public Bus_if,public sc_module
 {
 
 	public:
@@ -110,6 +118,7 @@ class Bus : public Bus_if, public sc_module
 			reads = 0;
 			writes = 0; 
 		}
+#if 1
 		virtual bool read(int writer, int addr)
 		{
 			while(bus.trylock() == -1){
@@ -177,7 +186,7 @@ class Bus : public Bus_if, public sc_module
 
 			return true;
 		}
-
+#endif
 };
 
 SC_MODULE(Cache) 
@@ -213,7 +222,7 @@ SC_MODULE(Cache)
 		sc_inout_rv<32> 	Port_BusAddr;
 		sc_out<Bus::BUS_REQ> 	Port_BusReq;
 
-		sc_port<Bus_if>		Port_Bus;
+		//sc_port<Bus_if>		Port_Bus;
 
 		int cache_id;	
 		int snooping;
@@ -373,7 +382,7 @@ SC_MODULE(Cache)
 					cout << sc_time_stamp() << ": MEM received write" << endl;
 					if (hit){ //write hit
 
-						Port_Bus -> write(cache_id, addr, cpu_data);//issue bus write for a write hit 
+						//Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
 						stats_writehit(cache_id);
 
 						//Port_Hit.write(true);
@@ -401,7 +410,7 @@ SC_MODULE(Cache)
 					}
 					else //write miss
 					{		
-						Port_Bus -> writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+						//Port_Bus->writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
 						stats_writemiss(cache_id);
 
 						//Port_Hit.write(false);
@@ -553,7 +562,7 @@ SC_MODULE(Cache)
 					}
 					else //read miss
 					{		
-						Port_Bus -> read(cache_id, addr); // issue a bus read for a read miss
+						//Port_Bus->read(cache_id, addr); // issue a bus read for a read miss
 						stats_readmiss(cache_id);
 
 						//Port_Hit.write(false);
@@ -903,7 +912,7 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_BusAddr(sigBusAddr);	
 			cache[i]->Port_BusWriter(sigBusWriter);	
 			cache[i]->Port_BusReq(sigBusReq);	
-			cache[i]->Port_Bus(bus);
+			//cache[i]->Port_Bus(bus);
 
 			/* Connect Cache to CPU */
 			cache[i]->Port_Func(sigMemFunc[i]);	
