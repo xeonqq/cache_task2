@@ -30,19 +30,27 @@
 //
  */
 
-#include "aca2009.h"
 #include <systemc.h>
 #include <iostream>
 #include <iomanip> 
+#include "aca2009.h"
 
 using namespace std;
 
 //static const int MEM_SIZE = 512;
 
-#define NUM_CPUS 12
+#define NUM_CPUS 4
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
+class Bus_if : public virtual sc_interface
+{
+
+	public:
+		virtual bool read(int writer, int address) = 0;
+		virtual bool write(int writer, int address, int data) = 0;
+		virtual bool writex(int writer, int address, int data) = 0;
+};
 
 typedef	struct 
 {
@@ -62,14 +70,6 @@ typedef	struct
 	aca_cache_set cache_set[CACHE_SETS];
 } aca_cache;
 
-class Bus_if;
-class Bus_if : public virtual sc_inferface{
-
-	public:
-		virtual bool read(int writer, int address) = 0;
-		virtual bool write(int writer, int address, int data) = 0;
-		virtual bool writex(int writer, int address, int data) = 0;
-};
 
 
 
@@ -265,32 +265,32 @@ SC_MODULE(Cache)
 			{
 				wait(Port_BusReq.value_changed_event());
 				if(Port_BusWriter.read() != cache_id){
-					
+
 					int addr= Port_BusAddr.read().to_int();
 					aca_cache_line *c_line;
 					sc_uint<20> tag = 0;
 					unsigned int line_index;
 					line_index = (addr & 0x00000FE0) >> 5;
 					tag = addr >> 12;
-					
+
 					switch(Port_BusReq.read())
 					{
 						case Bus::BUS_RD:
 							/* do nothing
-							for ( int i=0; i <CACHE_SETS; i++ ){
-								c_line = &(cache->cache_set[i].cache_line[line_index]);
-								if (c_line -> valid == true){
-									if ( c_line -> tag == tag){
-										//flush data to the bus
+							   for ( int i=0; i <CACHE_SETS; i++ ){
+							   c_line = &(cache->cache_set[i].cache_line[line_index]);
+							   if (c_line -> valid == true){
+							   if ( c_line -> tag == tag){
+							//flush data to the bus
 
-										}
+							}
 
-									}
-								}
+							}
+							}
 							 */
 							break;
 						case Bus::BUS_RDX:
-							
+
 						case Bus::BUS_WR:
 							for ( int i=0; i <CACHE_SETS; i++ ){
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
@@ -397,7 +397,7 @@ SC_MODULE(Cache)
 							default: cout << "Damn here !!!!" << endl;
 
 						}
-						
+
 					}
 					else //write miss
 					{		
@@ -478,12 +478,12 @@ SC_MODULE(Cache)
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
 								//Port_Replace_Line.write(set_index_toreplace);
-								
+
 								/*no needed becuase every time we write to cache, we also write back to memory 
-								for(int i=0; i<8;i++)//write the cache line back to the memory
-									wait(100);
+								  for(int i=0; i<8;i++)//write the cache line back to the memory
+								  wait(100);
 								 */
-								
+
 								// write allocate
 								for (int i = 0; i< 8; i++){
 									wait(100); //fetch 8 * words data from memory to cache
@@ -861,22 +861,24 @@ int sc_main(int argc, char* argv[])
 
 
 		int snooping = 1;
+
 		Bus bus("mem_bus");
 
+		sc_clock clk;
 		sc_signal<int> sigBusWriter;
 		sc_signal<Bus::BUS_REQ> sigBusReq;
 		sc_signal_rv<32> sigBusAddr;
-	
+
 		bus.Port_BusAddr(sigBusAddr);	
 		bus.Port_BusWriter(sigBusWriter);
 		bus.Port_BusReq(sigBusReq);
+		bus.Port_CLK(clk);
 
 		sc_buffer<Cache::Function> sigMemFunc[NUM_CPUS];
 		sc_signal<int>              sigMemAddr[NUM_CPUS];
 		sc_signal_rv<32>            sigMemData[NUM_CPUS];
 		sc_buffer<Cache::RetCode>  sigMemDone[NUM_CPUS];
-		sc_clock clk;
-		
+
 		Cache *cache[NUM_CPUS];
 		CPU   *cpu[NUM_CPUS];
 
@@ -887,11 +889,11 @@ int sc_main(int argc, char* argv[])
 
 			sprintf(name_cache, "cache_%d", i);
 			sprintf(name_cpu, "cpu_%d", i);
-			
+
 			/* Create objects for Cache and CPU */	
 			cache[i] = new Cache(name_cache);
 			cpu[i] = new CPU(name_cpu);
-			
+
 			/* Set IDs */
 			cpu[i]->cpu_id = i;
 			cache[i]->cache_id = i;
@@ -908,7 +910,7 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_Addr(sigMemAddr[i]);	
 			cache[i]->Port_Data(sigMemData[i]);	
 			cache[i]->Port_Done(sigMemDone[i]);	
-			
+
 			/* Connect CPu to Cache */
 			cpu[i]->Port_MemFunc(sigMemFunc[i]);	
 			cpu[i]->Port_MemAddr(sigMemAddr[i]);	
