@@ -70,15 +70,6 @@ typedef	struct
 	aca_cache_set cache_set[CACHE_SETS];
 } aca_cache;
 
-#if 1
-class Bus_if : public virtual sc_core::sc_interface
-{
-	public:
-		virtual bool read(int writer, int address) = 0;
-		virtual bool write(int writer, int address, int data) = 0;
-		virtual bool writex(int writer, int address, int data) = 0;
-};
-#endif
 
 
 class Bus : public Bus_if,public sc_module
@@ -912,7 +903,7 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_BusAddr(sigBusAddr);	
 			cache[i]->Port_BusWriter(sigBusWriter);	
 			cache[i]->Port_BusReq(sigBusReq);	
-			//cache[i]->Port_Bus(bus);
+			cache[i]->Port_Bus(bus);
 
 			/* Connect Cache to CPU */
 			cache[i]->Port_Func(sigMemFunc[i]);	
