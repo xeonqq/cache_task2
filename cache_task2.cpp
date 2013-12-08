@@ -222,7 +222,7 @@ SC_MODULE(Cache)
 		sc_inout_rv<32> 	Port_BusAddr;
 		sc_out<Bus::BUS_REQ> 	Port_BusReq;
 
-		//sc_port<Bus_if>		Port_Bus;
+		sc_port<Bus_if>		Port_Bus;
 
 		int cache_id;	
 		int snooping;
@@ -382,7 +382,7 @@ SC_MODULE(Cache)
 					cout << sc_time_stamp() << ": MEM received write" << endl;
 					if (hit){ //write hit
 
-						//Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
+						Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
 						stats_writehit(cache_id);
 
 						//Port_Hit.write(true);
@@ -410,7 +410,7 @@ SC_MODULE(Cache)
 					}
 					else //write miss
 					{		
-						//Port_Bus->writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+						Port_Bus->writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
 						stats_writemiss(cache_id);
 
 						//Port_Hit.write(false);
@@ -562,7 +562,7 @@ SC_MODULE(Cache)
 					}
 					else //read miss
 					{		
-						//Port_Bus->read(cache_id, addr); // issue a bus read for a read miss
+						Port_Bus->read(cache_id, addr); // issue a bus read for a read miss
 						stats_readmiss(cache_id);
 
 						//Port_Hit.write(false);
