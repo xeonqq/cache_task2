@@ -1020,6 +1020,10 @@ int sc_main(int argc, char* argv[])
 
 			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
 		}
+		
+		printf("Bus\twaits\treads\ttotal_access(r+w)\twait_per_access\n");
+		int total_accesses= bus.reads+bus.writes;
+		printf("%d\t%d\t%d\t%d\t%f\n", i, bus.waits, bus.reads, bus.writes, total_accesses,bus.waits/total_accesses);
 
 
 	}
