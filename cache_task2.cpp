@@ -39,6 +39,8 @@ using namespace std;
 
 //static const int MEM_SIZE = 512;
 
+int ProbeWrites = 0;
+int ProbeReads = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
@@ -188,6 +190,7 @@ SC_MODULE(Cache)
 							}
 							}
 							 */
+							ProbeReads ++;
 							break;
 						case BUS_RDX:
 
@@ -201,6 +204,7 @@ SC_MODULE(Cache)
 
 								}
 							}
+							ProbeWrites ++;
 
 							break;
 
@@ -1002,12 +1006,22 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		sc_start(32500000,SC_NS);
-		sc_start();
+		sc_start(42500000,SC_NS);
+		//sc_start();
 
 
 		// Print statistics after simulation finished
 		stats_print();
+		cout<<endl;
+		printf("CPU\tProbeReads\tProbeWrites\n");
+		for(unsigned int i =0; i < num_cpus; i++)
+		{
+		
+
+			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
+		}
+
+
 	}
 	catch (exception& e)
 	{
