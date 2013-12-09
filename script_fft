@@ -1,0 +1,6 @@
+reset
+make cache_task2
+./cache_task2.bin tracefiles/fft_16_p1.trf > dump_fft_1
+./cache_task2.bin tracefiles/fft_16_p2.trf > dump_fft_2
+./cache_task2.bin tracefiles/fft_16_p4.trf > dump_fft_4
+./cache_task2.bin tracefiles/fft_16_p8.trf > dump_fft_8

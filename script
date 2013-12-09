@@ -1,0 +1,7 @@
+#!/bin/bash
+
+make cache_task2;
+./cache_task2.bin tracefiles/rnd_p1.trf > dump1
+./cache_task2.bin tracefiles/rnd_p2.trf > dump2
+./cache_task2.bin tracefiles/rnd_p4.trf > dump3
+./cache_task2.bin tracefiles/rnd_p8.trf > dump4
