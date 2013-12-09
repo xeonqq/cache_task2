@@ -776,7 +776,7 @@ SC_MODULE(CPU)
 			while(!tracefile_ptr->eof())
 			{
 				// Get the next action for the processor in the trace
-				if(!tracefile_ptr->next(0, tr_data))
+				if(!tracefile_ptr->next(cpu_id, tr_data))
 				{
 					cerr << "Error reading trace for CPU" << endl;
 					break;
@@ -1006,8 +1006,8 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		sc_start(42500000,SC_NS);
-		//sc_start();
+		//sc_start(42500000,SC_NS);
+		sc_start();
 
 
 		// Print statistics after simulation finished
