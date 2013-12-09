@@ -100,9 +100,9 @@ SC_MODULE(Cache)
 		sc_inout_rv<32> Port_Data;
 
 
-		sc_in<int> 	Port_BusWriter;
+		sc_in_rv<32> 	Port_BusWriter;
 		sc_in_rv<32> 	Port_BusAddr;
-		sc_in<BUS_REQ> 	Port_BusReq;
+		sc_in_rv<32> 	Port_BusReq;
 
 		sc_port<Bus_if>	Port_Bus;
 
@@ -159,7 +159,7 @@ SC_MODULE(Cache)
 			{
 #if 1
 				wait(Port_BusReq.value_changed_event());
-				int writer = Port_BusWriter.read();
+				int writer = Port_BusWriter.read().to_int();
 				if(writer != cache_id){
 					cout<<"I am cache: "<< cache_id <<"snooped"<<endl;
 
@@ -170,7 +170,7 @@ SC_MODULE(Cache)
 					unsigned int line_index;
 					line_index = (addr & 0x00000FE0) >> 5;
 					tag = addr >> 12;
-					int req = Port_BusReq.read();
+					int req = Port_BusReq.read().to_int();
 					cout<< "Snoooooping bussss " << req <<endl; 
 
 					switch(req)
@@ -222,7 +222,7 @@ SC_MODULE(Cache)
 		{
 			while (true)
 			{
-				//cout<<"waiting for wr function"<<endl;
+				cout<<"waiting for wr function"<< cache_id << endl;
 				wait(Port_Func.value_changed_event());
 				cout<<"I am cache: "<< cache_id <<endl;
 
@@ -415,9 +415,11 @@ SC_MODULE(Cache)
 #endif
 						}
 					}
+#if 1
 					//adding this becuase of write through
 					for(int i=0; i<8;i++)//write the cache line back to the memory for both write his and miss
 						wait(100);
+#endif
 
 					Port_Done.write( RET_WRITE_DONE );
 					//Port_Wr_Done.write ( RET_WRITE_DONE );
@@ -620,8 +622,8 @@ class Bus : public Bus_if,public sc_module
 #endif
 		// ports
 		sc_in<bool> Port_CLK;
-		sc_out<Cache::BUS_REQ> Port_BusReq;
-		sc_out<int> Port_BusWriter;
+		sc_signal_rv<32> Port_BusReq;
+		sc_signal_rv<32> Port_BusWriter;
 
 		sc_signal_rv<32> Port_BusAddr;
 
@@ -637,7 +639,8 @@ class Bus : public Bus_if,public sc_module
 			// Initialize some bus properties
 			sensitive << Port_CLK.pos();
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
-			//Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			waits = 0;
 			reads = 0;
@@ -658,14 +661,15 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(Cache::BUS_RD);
+			Port_BusReq.write(0x00);
 
 			//wait for everyone to revieve
 			cout<<"before wait rd"<<endl;
 			wait();
 			cout<<"after wait rd"<<endl;
-			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			cout<<"before unlock"<<endl;
 			bus.unlock();
@@ -689,13 +693,14 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(Cache::BUS_WR);
+			Port_BusReq.write(0x01);
 
 			cout<<"before wait wr"<<endl;
 			wait();
 			cout<<"after wait wr"<<endl;
-			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			cout<<"before unlock WR"<<endl;
 			bus.unlock();
@@ -718,14 +723,17 @@ class Bus : public Bus_if,public sc_module
 			writes++;
 
 			Port_BusAddr.write(addr);
+			cout<<"before wait 0"<<endl;
+			Port_BusReq.write(0x02);
+			cout<<"before wait 1"<<endl;
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(Cache::BUS_RDX);
 
 			cout<<"before wait rdex"<<endl;
 			wait();
 			cout<<"after wait rdex"<<endl;
-			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			cout<<"before unlock ReadEX"<<endl;
 			bus.unlock();
@@ -900,18 +908,18 @@ int sc_main(int argc, char* argv[])
 		Bus bus("bus");
 
 		sc_clock clk;
-		sc_signal<int>            sigBusWriter;
-		sc_signal<Cache::BUS_REQ> sigBusReq;
+		//sc_signal<int>            sigBusWriter;
+		//sc_buffer<Cache::BUS_REQ> sigBusReq;
 		//sc_signal_rv<32>          sigBusAddr;
 
 		//bus.Port_BusAddr(sigBusAddr);	
-		bus.Port_BusWriter(sigBusWriter);
-		bus.Port_BusReq(sigBusReq);
+		//bus.Port_BusWriter(sigBusWriter);
+		//bus.Port_BusReq(sigBusReq);
 		bus.Port_CLK(clk);
 
 		
 		//sigBusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
-		sigBusReq.write(Cache::BUS_INVALID);
+		//sigBusReq.write(Cache::BUS_INVALID);
 
 		sc_buffer<Cache::Function>  sigMemFunc[num_cpus];
 		sc_signal<int>              sigMemAddr[num_cpus];
@@ -940,8 +948,8 @@ int sc_main(int argc, char* argv[])
 
 			/* Connect Cache to Bus */
 			cache[i]->Port_BusAddr(bus.Port_BusAddr);	
-			cache[i]->Port_BusWriter(sigBusWriter);	
-			cache[i]->Port_BusReq(sigBusReq);	
+			cache[i]->Port_BusWriter(bus.Port_BusWriter);	
+			cache[i]->Port_BusReq(bus.Port_BusReq);	
 			cache[i]->Port_Bus(bus);
 
 			/* Connect Cache to CPU */
@@ -981,9 +989,9 @@ int sc_main(int argc, char* argv[])
 			sc_trace(wf, sigMemAddr[i], addr_cpu);
 			sc_trace(wf, sigMemData[i], data_cpu);
 		}
-		sc_trace(wf, bus.Port_BusReq , "addr_on_bus");
-		sc_trace(wf, sigBusWriter, "writer_on_bus");
-		sc_trace(wf, sigBusReq , "req_on_bus");
+		sc_trace(wf, bus.Port_BusAddr , "addr_on_bus");
+		sc_trace(wf, bus.Port_BusWriter, "writer_on_bus");
+		sc_trace(wf, bus.Port_BusReq, "req_on_bus");
 
 
 		//sc_trace(wf, sigMemWr_Done, "wr_done");
@@ -994,7 +1002,7 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		//sc_start(4000000,SC_NS);
+		sc_start(32500000,SC_NS);
 		sc_start();
 
 
