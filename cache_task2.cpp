@@ -71,11 +71,12 @@ typedef	struct
 } aca_cache;
 
 
-
+#if 0
 class Bus : public Bus_if,public sc_module
 {
 
 	public:
+#if 0
 		enum BUS_REQ 
 		{
 			BUS_RD,
@@ -83,10 +84,10 @@ class Bus : public Bus_if,public sc_module
 			BUS_RDX,//-> seems have same response with BUS_WR
 			BUS_INVALID
 		};
-
+#endif
 		// ports
 		sc_in<bool> Port_CLK;
-		sc_out<BUS_REQ> Port_BusReq;
+		sc_out<Cache::BUS_REQ> Port_BusReq;
 		sc_out<int> Port_BusWriter;
 
 		sc_out_rv<32> Port_BusAddr;
@@ -123,7 +124,7 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(BUS_RD);
+			Port_BusReq.write(Cache::BUS_RD);
 
 			//wait for everyone to revieve
 			cout<<"before wait"<<endl;
@@ -154,7 +155,7 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(BUS_WR);
+			Port_BusReq.write(Cache::BUS_WR);
 
 			wait();
 			Port_BusReq.write(BUS_INVALID);
@@ -182,7 +183,7 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(BUS_RDX);
+			Port_BusReq.write(Cache::BUS_RDX);
 
 			wait();
 			Port_BusReq.write(BUS_INVALID);
@@ -196,11 +197,19 @@ class Bus : public Bus_if,public sc_module
 		}
 #endif
 };
+#endif
 
 SC_MODULE(Cache) 
 {
 
 	public:
+		enum BUS_REQ 
+		{
+			BUS_RD,
+			BUS_WR,
+			BUS_RDX,//-> seems have same response with BUS_WR
+			BUS_INVALID
+		};
 
 		enum Function 
 		{
@@ -228,7 +237,7 @@ SC_MODULE(Cache)
 
 		sc_in<int> 		Port_BusWriter;
 		sc_in_rv<32> 	Port_BusAddr;
-		sc_in<Bus::BUS_REQ> 	Port_BusReq;
+		sc_in<BUS_REQ> 	Port_BusReq;
 
 		sc_port<Bus_if>		Port_Bus;
 
@@ -281,18 +290,21 @@ SC_MODULE(Cache)
 			while(snooping)
 			{
 				wait(Port_BusReq.value_changed_event());
-				if(Port_BusWriter.read() != cache_id){
-
+				int writer = Port_BusWriter.read();
+				if(writer != cache_id){
+					cout<< "Cache id: " << writer <<endl; 
 					int addr= Port_BusAddr.read().to_int();
 					aca_cache_line *c_line;
 					sc_uint<20> tag = 0;
 					unsigned int line_index;
 					line_index = (addr & 0x00000FE0) >> 5;
 					tag = addr >> 12;
+					int req = Port_BusReq.read();
+					cout<< "Snoooooping bussss " << req <<endl; 
 
-					switch(Port_BusReq.read())
+					switch(req)
 					{
-						case Bus::BUS_RD:
+						case BUS_RD:
 							/* do nothing
 							   for ( int i=0; i <CACHE_SETS; i++ ){
 							   c_line = &(cache->cache_set[i].cache_line[line_index]);
@@ -306,9 +318,9 @@ SC_MODULE(Cache)
 							}
 							 */
 							break;
-						case Bus::BUS_RDX:
+						case BUS_RDX:
 
-						case Bus::BUS_WR:
+						case BUS_WR:
 							for ( int i=0; i <CACHE_SETS; i++ ){
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
 								if (c_line -> valid == true){
@@ -718,6 +730,132 @@ SC_MODULE(Cache)
 		}
 }; 
 
+class Bus : public Bus_if,public sc_module
+{
+
+	public:
+#if 0
+		enum BUS_REQ 
+		{
+			BUS_RD,
+			BUS_WR,
+			BUS_RDX,//-> seems have same response with BUS_WR
+			BUS_INVALID
+		};
+#endif
+		// ports
+		sc_in<bool> Port_CLK;
+		sc_out<Cache::BUS_REQ> Port_BusReq;
+		sc_out<int> Port_BusWriter;
+
+		sc_out_rv<32> Port_BusAddr;
+
+		sc_mutex bus;
+
+		long waits;
+		long reads;
+		long writes;
+	public:
+		SC_CTOR(Bus)
+		{
+			// Handle Port_CLK to simulate delay
+			// Initialize some bus properties
+			sensitive << Port_CLK.pos();
+			//Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			waits = 0;
+			reads = 0;
+			writes = 0; 
+		}
+#if 1
+		virtual bool read(int writer, int addr)
+		{
+			cout<<"before locking mutex Read"<<endl;
+			while(bus.trylock() == -1){
+				cout<<"gagagaggagagga"<<endl;
+				waits++;
+				wait();
+				cout<<"hahahhahahahah"<<endl;
+
+			}
+			reads++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusReq.write(Cache::BUS_RD);
+
+			//wait for everyone to revieve
+			cout<<"before wait"<<endl;
+			wait();
+			cout<<"after wait"<<endl;
+			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			cout<<"before unlock"<<endl;
+			bus.unlock();
+			cout<<"after unlocking mutex Read"<<endl;
+
+			return true;
+
+		}
+
+		virtual bool write(int writer, int addr, int data) 
+		{
+			cout<<"before locking mutex Write"<<endl;
+			while(bus.trylock() == -1){
+				//cout<<"gagagaggagagga write"<<endl;
+				waits++;
+				//wait();
+				//cout<<"hahahhahahahah"<<endl;
+			}
+
+			writes++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusReq.write(Cache::BUS_WR);
+
+			wait();
+			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			cout<<"before unlock WR"<<endl;
+			bus.unlock();
+			cout<<"after unlocking mutex Write"<<endl;
+
+			return true;
+		}
+
+		virtual bool writex(int writer, int addr, int data) 
+		{
+			cout<<"before locking mutex ReadEX"<<endl;
+
+			while(bus.trylock() == -1){
+				//cout<<"gagagaggagagga rdex"<<endl;
+				waits++;
+				//wait();
+				//cout<<"hahahhahahahah"<<endl;
+			}
+
+			writes++;
+
+			Port_BusAddr.write(addr);
+			Port_BusWriter.write(writer);
+			Port_BusReq.write(Cache::BUS_RDX);
+
+			wait();
+			Port_BusReq.write(Cache::BUS_INVALID);
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			cout<<"before unlock RDX"<<endl;
+			bus.unlock();
+
+			cout<<"after unlocking mutex ReadEX"<<endl;
+			return true;
+		}
+#endif
+};
+
 SC_MODULE(CPU) 
 {
 
@@ -883,7 +1021,7 @@ int sc_main(int argc, char* argv[])
 
 		sc_clock clk;
 		sc_signal<int> sigBusWriter;
-		sc_signal<Bus::BUS_REQ> sigBusReq;
+		sc_signal<Cache::BUS_REQ> sigBusReq;
 		sc_signal_rv<32> sigBusAddr;
 
 		bus.Port_BusAddr(sigBusAddr);	
@@ -893,6 +1031,7 @@ int sc_main(int argc, char* argv[])
 
 		
 		sigBusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+		sigBusReq.write(Cache::BUS_INVALID);
 
 		sc_buffer<Cache::Function> sigMemFunc[NUM_CPUS];
 		sc_signal<int>              sigMemAddr[NUM_CPUS];
