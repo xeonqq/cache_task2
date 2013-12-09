@@ -101,6 +101,7 @@ SC_MODULE(Cache)
 		sc_out<RetCode> Port_Done;
 		sc_inout_rv<32> Port_Data;
 
+		sc_out<bool> 	Port_Hit;
 
 		sc_in_rv<32> 	Port_BusWriter;
 		sc_in_rv<32> 	Port_BusAddr;
@@ -282,7 +283,7 @@ SC_MODULE(Cache)
 						Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
 						stats_writehit(cache_id);
 
-						//Port_Hit.write(true);
+						Port_Hit.write(true);
 						//Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
@@ -310,7 +311,7 @@ SC_MODULE(Cache)
 						Port_Bus->writex(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
 						stats_writemiss(cache_id);
 
-						//Port_Hit.write(false);
+						Port_Hit.write(false);
 						cout << sc_time_stamp() << ": Cache write miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
@@ -438,7 +439,7 @@ SC_MODULE(Cache)
 					if (hit){ //read hit
 						stats_readhit(cache_id);// do nothing for a read hit.
 
-						//Port_Hit.write(true);
+						Port_Hit.write(true);
 						//Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
@@ -465,7 +466,7 @@ SC_MODULE(Cache)
 						Port_Bus->read(cache_id, addr); // issue a bus read for a read miss
 						stats_readmiss(cache_id);
 
-						//Port_Hit.write(false);
+						Port_Hit.write(false);
 						cout << sc_time_stamp() << ": Cache read miss!" << endl;
 
 						for ( int i=0; i <CACHE_SETS; i++ ){
@@ -929,6 +930,7 @@ int sc_main(int argc, char* argv[])
 		sc_signal<int>              sigMemAddr[num_cpus];
 		sc_signal_rv<32>            sigMemData[num_cpus];
 		sc_buffer<Cache::RetCode>   sigMemDone[num_cpus];
+		sc_signal<bool> 	    sigMemHit[num_cpus];
 
 		Cache *cache[num_cpus];
 		CPU   *cpu[num_cpus];
@@ -961,8 +963,9 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_Addr(sigMemAddr[i]);	
 			cache[i]->Port_Data(sigMemData[i]);	
 			cache[i]->Port_Done(sigMemDone[i]);	
+			cache[i]->Port_Hit(sigMemHit[i]);
 
-			/* Connect CPu to Cache */
+			/* Connect CPU to Cache */
 			cpu[i]->Port_MemFunc(sigMemFunc[i]);	
 			cpu[i]->Port_MemAddr(sigMemAddr[i]);	
 			cpu[i]->Port_MemData(sigMemData[i]);	
@@ -986,12 +989,15 @@ int sc_main(int argc, char* argv[])
 		{
 			char addr_cpu[16];
 			char data_cpu[16];
+			char hit_cache[16];
 
 			sprintf(addr_cpu, "cpu_addr_%d", i);
 			sprintf(data_cpu, "cpu_data_%d", i);
+			sprintf(hit_cache, "cache_hit_%d", i);
 
 			sc_trace(wf, sigMemAddr[i], addr_cpu);
 			sc_trace(wf, sigMemData[i], data_cpu);
+			sc_trace(wf, sigMemHit[i], hit_cache);
 		}
 		sc_trace(wf, bus.Port_BusAddr , "addr_on_bus");
 		sc_trace(wf, bus.Port_BusWriter, "writer_on_bus");
@@ -1006,8 +1012,8 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		//sc_start(42500000,SC_NS);
-		sc_start();
+		sc_start(42500,SC_NS);
+		//sc_start();
 
 
 		// Print statistics after simulation finished
@@ -1021,9 +1027,9 @@ int sc_main(int argc, char* argv[])
 			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
 		}
 		
-		printf("Bus\twaits\treads\ttotal_access(r+w)\twait_per_access\n");
-		int total_accesses= bus.reads+bus.writes;
-		printf("%d\t%d\t%d\t%d\t%f\n", i, bus.waits, bus.reads, bus.writes, total_accesses,bus.waits/total_accesses);
+		printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
+		long total_accesses= bus.reads+bus.writes;
+		printf("%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)(bus.waits/total_accesses));
 
 
 	}
