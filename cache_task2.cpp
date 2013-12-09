@@ -39,7 +39,7 @@ using namespace std;
 
 //static const int MEM_SIZE = 512;
 
-#define NUM_CPUS 4
+#define NUM_CPUS 2
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
@@ -89,7 +89,7 @@ class Bus : public Bus_if,public sc_module
 		sc_out<BUS_REQ> Port_BusReq;
 		sc_out<int> Port_BusWriter;
 
-		sc_inout_rv<32> Port_BusAddr;
+		sc_out_rv<32> Port_BusAddr;
 
 		sc_mutex bus;
 
@@ -103,7 +103,7 @@ class Bus : public Bus_if,public sc_module
 			// Initialize some bus properties
 			sensitive << Port_CLK.pos();
 
-			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			//Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			waits = 0;
 			reads = 0;
@@ -209,9 +209,9 @@ SC_MODULE(Cache)
 		//sc_out<int> 	Port_Replace_Line;
 
 
-		sc_out<int> 		Port_BusWriter;
-		sc_inout_rv<32> 	Port_BusAddr;
-		sc_out<Bus::BUS_REQ> 	Port_BusReq;
+		sc_in<int> 		Port_BusWriter;
+		sc_in_rv<32> 	Port_BusAddr;
+		sc_in<Bus::BUS_REQ> 	Port_BusReq;
 
 		sc_port<Bus_if>		Port_Bus;
 
@@ -884,8 +884,8 @@ int sc_main(int argc, char* argv[])
 
 		for(int i = 0; i < NUM_CPUS; i++)
 		{
-			char name_cache[NUM_CPUS];
-			char name_cpu[NUM_CPUS];
+			char name_cache[12];
+			char name_cpu[12];
 
 			sprintf(name_cache, "cache_%d", i);
 			sprintf(name_cpu, "cpu_%d", i);
