@@ -1006,12 +1006,13 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		sc_start(32500000,SC_NS);
-		sc_start();
+		sc_start(42500000,SC_NS);
+		//sc_start();
 
 
 		// Print statistics after simulation finished
 		stats_print();
+		cout<<endl;
 		printf("CPU\tProbeReads\tProbeWrites\n");
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
