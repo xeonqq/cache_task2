@@ -102,7 +102,6 @@ class Bus : public Bus_if,public sc_module
 			// Handle Port_CLK to simulate delay
 			// Initialize some bus properties
 			sensitive << Port_CLK.pos();
-
 			//Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			waits = 0;
@@ -112,9 +111,12 @@ class Bus : public Bus_if,public sc_module
 #if 1
 		virtual bool read(int writer, int addr)
 		{
+			cout<<"before locking mutex Read"<<endl;
 			while(bus.trylock() == -1){
+				cout<<"gagagaggagagga"<<endl;
 				waits++;
 				wait();
+				cout<<"hahahhahahahah"<<endl;
 
 			}
 			reads++;
@@ -124,11 +126,15 @@ class Bus : public Bus_if,public sc_module
 			Port_BusReq.write(BUS_RD);
 
 			//wait for everyone to revieve
+			cout<<"before wait"<<endl;
 			wait();
+			cout<<"after wait"<<endl;
 			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
+			cout<<"before unlock"<<endl;
 			bus.unlock();
+			cout<<"after unlocking mutex Read"<<endl;
 
 			return true;
 
@@ -136,9 +142,12 @@ class Bus : public Bus_if,public sc_module
 
 		virtual bool write(int writer, int addr, int data) 
 		{
+			cout<<"before locking mutex Write"<<endl;
 			while(bus.trylock() == -1){
+				//cout<<"gagagaggagagga write"<<endl;
 				waits++;
-				wait();
+				//wait();
+				//cout<<"hahahhahahahah"<<endl;
 			}
 
 			writes++;
@@ -151,16 +160,22 @@ class Bus : public Bus_if,public sc_module
 			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
+			cout<<"before unlock WR"<<endl;
 			bus.unlock();
+			cout<<"after unlocking mutex Write"<<endl;
 
 			return true;
 		}
 
 		virtual bool writex(int writer, int addr, int data) 
 		{
+			cout<<"before locking mutex ReadEX"<<endl;
+
 			while(bus.trylock() == -1){
+				//cout<<"gagagaggagagga rdex"<<endl;
 				waits++;
-				wait();
+				//wait();
+				//cout<<"hahahhahahahah"<<endl;
 			}
 
 			writes++;
@@ -173,8 +188,10 @@ class Bus : public Bus_if,public sc_module
 			Port_BusReq.write(BUS_INVALID);
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
+			cout<<"before unlock RDX"<<endl;
 			bus.unlock();
 
+			cout<<"after unlocking mutex ReadEX"<<endl;
 			return true;
 		}
 #endif
@@ -874,6 +891,9 @@ int sc_main(int argc, char* argv[])
 		bus.Port_BusReq(sigBusReq);
 		bus.Port_CLK(clk);
 
+		
+		sigBusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
 		sc_buffer<Cache::Function> sigMemFunc[NUM_CPUS];
 		sc_signal<int>              sigMemAddr[NUM_CPUS];
 		sc_signal_rv<32>            sigMemData[NUM_CPUS];
@@ -932,8 +952,17 @@ int sc_main(int argc, char* argv[])
 		sc_trace(wf, clk, "clock");
 		//sc_trace(wf, sigMemFunc, "wr");//does not showup
 		//sc_trace(wf, sigMemDone, "ret");//does not showup
-		sc_trace(wf, sigMemAddr, "addr");
-		sc_trace(wf, sigMemData, "data");
+		for(int i=0; i<NUM_CPUS; i++)
+		{
+			char addr_cpu[16];
+			char data_cpu[16];
+
+			sprintf(addr_cpu, "cpu_addr_%d", i);
+			sprintf(data_cpu, "cpu_data_%d", i);
+
+			sc_trace(wf, sigMemAddr[i], addr_cpu);
+			sc_trace(wf, sigMemData[i], data_cpu);
+		}
 		//sc_trace(wf, sigMemWr_Done, "wr_done");
 		//sc_trace(wf, sigMemWr_Func, "wr_func"); //function issued by cpu
 		//sc_trace(wf, sigMemHit, "Hit");
