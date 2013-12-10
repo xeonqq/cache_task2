@@ -39,13 +39,12 @@
 
 using namespace std;
 
-//static const int MEM_SIZE = 512;
-
 int ProbeWrites = 0;
 int ProbeReads = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
+
 class Bus_if : public virtual sc_interface
 {
 
@@ -59,7 +58,6 @@ typedef	struct
 {
 	bool valid;
 	sc_uint<20> tag;
-	//sc_int<8> data[32]; //32 byte line size 
 	int data[8]; //8 words = 32 byte line size 
 } aca_cache_line;
 
@@ -104,11 +102,13 @@ SC_MODULE(Cache)
 		sc_inout_rv<32> Port_Data;
 
 		sc_out<bool> 	Port_Hit;
-
+		
+		// Input ports for snooping the Bus
 		sc_in_rv<32> 	Port_BusWriter;
 		sc_in_rv<32> 	Port_BusAddr;
 		sc_in_rv<32> 	Port_BusReq;
 
+		// Interface port to issue commands to the Bus
 		sc_port<Bus_if>	Port_Bus;
 
 		int cache_id;	
@@ -116,15 +116,16 @@ SC_MODULE(Cache)
 
 		SC_CTOR(Cache) 
 		{
+			// Main process
 			SC_THREAD(execute);
 			sensitive << Port_CLK.pos();
 			dont_initialize();
 
+			// Snooping process
 			SC_THREAD(snoop);
 			sensitive << Port_CLK.pos();
 			dont_initialize();
 
-			//m_data = new int[MEM_SIZE];
 			cache = new aca_cache;
 			lru_table= new unsigned char[CACHE_LINES] ;
 			for (int i = 0; i<8; i++)
@@ -135,7 +136,6 @@ SC_MODULE(Cache)
 
 		~Cache() 
 		{
-			//delete[] m_data;
 			delete cache;
 			delete lru_table;
 
@@ -162,13 +162,13 @@ SC_MODULE(Cache)
 
 			while (true)
 			{
-#if 1
+				// Snoop for requests on Bus
 				wait(Port_BusReq.value_changed_event());
 				int writer = Port_BusWriter.read().to_int();
-				if(writer != cache_id){
-					cout<<"I am cache: "<< cache_id <<"snooped"<<endl;
 
-					cout<< "Cache id: " << writer <<endl; 
+				// If the writer on the bus is not myself, probe the bus
+				if(writer != cache_id){
+					// Fetch the address on the bus to check its local cache
 					int addr= Port_BusAddr.read().to_int();
 					aca_cache_line *c_line;
 					sc_uint<20> tag = 0;
@@ -176,28 +176,21 @@ SC_MODULE(Cache)
 					line_index = (addr & 0x00000FE0) >> 5;
 					tag = addr >> 12;
 					int req = Port_BusReq.read().to_int();
-					cout<< "Snoooooping bussss " << req <<endl; 
 
 					switch(req)
 					{
 						case BUS_RD:
 							/* do nothing
-							   for ( int i=0; i <CACHE_SETS; i++ ){
-							   c_line = &(cache->cache_set[i].cache_line[line_index]);
-							   if (c_line -> valid == true){
-							   if ( c_line -> tag == tag){
-							//flush data to the bus
-
-							}
-
-							}
-							}
 							 */
-							ProbeReads ++;
+							ProbeReads++;
 							break;
+
 						case BUS_RDX:
 
 						case BUS_WR:
+							/* Invalidate the cache line with 
+							 * the corresponding address
+							 */
 							for ( int i=0; i <CACHE_SETS; i++ ){
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
 								if (c_line -> valid == true){
@@ -207,20 +200,17 @@ SC_MODULE(Cache)
 
 								}
 							}
-							ProbeWrites ++;
+							ProbeWrites++;
 
 							break;
 
 
-						default:
+						default://BUS_INVALID command
 							cout<<"a invalid command was issued in the end"<<endl;
 							break;
-
 					}
 				}
-			wait();
-#endif
-
+				wait();
 			}
 
 		}
@@ -229,21 +219,17 @@ SC_MODULE(Cache)
 		{
 			while (true)
 			{
-				cout<<"waiting for wr function"<< cache_id << endl;
 				wait(Port_Func.value_changed_event());
-				cout<<"I am cache: "<< cache_id <<endl;
 
 				Function f = Port_Func.read();
 				int addr   = Port_Addr.read();
-				//Port_Wr_Func.write(f);
-				//int *data;
+				
 				aca_cache_line *c_line;
 				sc_uint<20> tag = 0;
 				unsigned int line_index;
 				unsigned int word_index = 0;
 				bool hit   = false;
 				int hit_set = -1;
-				//cout << sc_time_stamp() << " Function is " << f << endl;
 
 				//determine whether a hit
 				cout << "addr: " << hex << addr << endl;
@@ -289,7 +275,6 @@ SC_MODULE(Cache)
 						stats_writehit(cache_id);
 
 						Port_Hit.write(true);
-						//Port_Hit_Line.write(hit_set);
 						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						c_line -> data[word_index] = cpu_data;
@@ -390,12 +375,6 @@ SC_MODULE(Cache)
 								}
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
-								//Port_Replace_Line.write(set_index_toreplace);
-
-								/*no needed becuase every time we write to cache, we also write back to memory 
-								  for(int i=0; i<8;i++)//write the cache line back to the memory
-								  wait(100);
-								 */
 
 								// write allocate
 								for (int i = 0; i< 8; i++){
@@ -432,10 +411,6 @@ SC_MODULE(Cache)
 #endif
 
 					Port_Done.write( RET_WRITE_DONE );
-					//Port_Wr_Done.write ( RET_WRITE_DONE );
-
-					//cout << sc_time_stamp() << ": MEM received write" << endl;
-					//data = Port_Data.read().to_int();
 				}
 				else//a read comes to cache
 				{
@@ -478,7 +453,7 @@ SC_MODULE(Cache)
 							if (valid_lines[i] == false){ //use an invalid line
 								// write allocate
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
-								cout << "Read waiting for global access " << cache_id <<endl; 
+								
 								for (int j = 0; j < 8; j++)
 								{
 									wait(100); //fetch 8 * words data from memory to cache
@@ -539,8 +514,6 @@ SC_MODULE(Cache)
 								}
 								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
 
-								//Port_Replace_Line.write(set_index_toreplace);
-
 								//write back the previous line to mem 
 								for(int i=0; i<8;i++)//write the cache line back to the memory
 									wait(100);
@@ -573,10 +546,6 @@ SC_MODULE(Cache)
 						}
 					}
 
-
-
-					//wait();
-					//Port_Wr_Done.write ( RET_READ_DONE );
 					Port_Done.write( RET_READ_DONE );
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
@@ -595,28 +564,6 @@ SC_MODULE(Cache)
 #endif
 				}
 				cout<<endl;
-
-
-				/*
-				// This simulates memory read/write delayc
-				wait(99);
-
-				if (f == FUNC_READ) 
-				{
-				//Port_Data.write( (addr < MEM_SIZE) ? m_data[addr] : 0 );
-				Port_Done.write( RET_READ_DONE );
-				wait();
-				Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
-				}
-				else
-				{
-				if (addr < MEM_SIZE) 
-				{
-				//	m_data[addr] = data;
-				}
-				Port_Done.write( RET_WRITE_DONE );
-				}
-				 */
 			}
 		}
 }; 
@@ -625,22 +572,15 @@ class Bus : public Bus_if,public sc_module
 {
 
 	public:
-#if 0
-		enum BUS_REQ 
-		{
-			BUS_RD,
-			BUS_WR,
-			BUS_RDX,//-> seems have same response with BUS_WR
-			BUS_INVALID
-		};
-#endif
 		// ports
 		sc_in<bool> Port_CLK;
+
+		// Write ports in the bus used by the Caches
 		sc_signal_rv<32> Port_BusReq;
 		sc_signal_rv<32> Port_BusWriter;
-
 		sc_signal_rv<32> Port_BusAddr;
 
+		// SystemC Mutex to provide atomicity
 		sc_mutex bus;
 
 		long waits;
@@ -650,8 +590,9 @@ class Bus : public Bus_if,public sc_module
 		SC_CTOR(Bus)
 		{
 			// Handle Port_CLK to simulate delay
-			// Initialize some bus properties
 			sensitive << Port_CLK.pos();
+
+			// Initialize some bus properties
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
@@ -660,16 +601,13 @@ class Bus : public Bus_if,public sc_module
 			reads = 0;
 			writes = 0; 
 		}
-#if 1
 		virtual bool read(int writer, int addr)
 		{
-			cout<<"before locking mutex Read "<< writer <<endl;
+			//Try to acquire the bus
 			while(bus.trylock() == -1){
-				cout<<"gagagaggagagga rd"<<endl;
+				//Retry after 1 cycle
 				waits++;
 				wait();
-				cout<<"hahahhahahahah rd"<<endl;
-
 			}
 			reads++;
 
@@ -678,16 +616,15 @@ class Bus : public Bus_if,public sc_module
 			Port_BusReq.write(0x00);
 
 			//wait for everyone to revieve
-			cout<<"before wait rd"<<endl;
 			wait();
-			cout<<"after wait rd"<<endl;
+
+			// Pull ports to tristate for future writes
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
-			cout<<"before unlock"<<endl;
+			// Release the lock
 			bus.unlock();
-			cout<<"after unlocking mutex Read "<< writer <<endl;
 
 			return true;
 
@@ -695,12 +632,11 @@ class Bus : public Bus_if,public sc_module
 
 		virtual bool write(int writer, int addr, int data) 
 		{
-			cout<<"before locking mutex Write "<< writer <<endl;
+			//Try to acquire the bus
 			while(bus.trylock() == -1){
-				cout<<"gagagaggagagga write"<<endl;
+				//Retry after 1 cycle
 				waits++;
 				wait();
-				cout<<"hahahhahahahah write"<<endl;
 			}
 
 			writes++;
@@ -709,64 +645,59 @@ class Bus : public Bus_if,public sc_module
 			Port_BusWriter.write(writer);
 			Port_BusReq.write(0x01);
 
-			cout<<"before wait wr"<<endl;
+			//wait for everyone to revieve
 			wait();
-			cout<<"after wait wr"<<endl;
+			
+			// Pull ports to tristate for future writes
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
-			cout<<"before unlock WR"<<endl;
+			// Release the lock
 			bus.unlock();
-			cout<<"after unlocking mutex Write "<< writer <<endl;
 
 			return true;
 		}
 
 		virtual bool writex(int writer, int addr, int data) 
 		{
-			cout<<"before locking mutex ReadEX "<< writer <<endl;
-
+			//Try to acquire the bus
 			while(bus.trylock() == -1){
-				cout<<"gagagaggagagga rdex"<<endl;
+				//Retry after 1 cycle
 				waits++;
 				wait();
-				cout<<"hahahhahahahah rdex"<<endl;
 			}
 
 			writes++;
 
 			Port_BusAddr.write(addr);
-			cout<<"before wait 0"<<endl;
 			Port_BusReq.write(0x02);
-			cout<<"before wait 1"<<endl;
 			Port_BusWriter.write(writer);
 
-			cout<<"before wait rdex"<<endl;
+			//wait for everyone to revieve
 			wait();
-			cout<<"after wait rdex"<<endl;
+
+			// Pull ports to tristate for future writes
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
-
-			cout<<"before unlock ReadEX"<<endl;
+		
+			// Release the lock
 			bus.unlock();
 
-			cout<<"after unlocking mutex ReadEX "<< writer <<endl;
 			return true;
 		}
-#endif
 };
 
 SC_MODULE(CPU) 
 {
 
 	public:
-		sc_in<bool>                Port_CLK;
+		sc_in<bool>             Port_CLK;
 		sc_in<Cache::RetCode>   Port_MemDone;
 		sc_out<Cache::Function> Port_MemFunc;
-		sc_out<int>                Port_MemAddr;
-		sc_inout_rv<32>            Port_MemData;
+		sc_out<int>             Port_MemAddr;
+		sc_inout_rv<32>         Port_MemData;
 		int cpu_id;
 
 		SC_CTOR(CPU) 
@@ -878,63 +809,16 @@ int sc_main(int argc, char* argv[])
 
 		// Initialize statistics counters
 		stats_init();
-#if 0
-		// Instantiate Modules
-		Cache mem("main_memory");
-		CPU    cpu("cpu");
-
-		// Signals
-		sc_buffer<Cache::Function> sigMemFunc;
-		sc_buffer<Cache::RetCode>  sigMemDone;
-		sc_signal<int>              sigMemAddr;
-		sc_signal_rv<32>            sigMemData;
-		sc_signal<bool> 	sigMemHit;
-		sc_signal<bool>              sigMemWr_Done;
-		sc_signal<bool>              sigMemWr_Func;
-		sc_signal<int>              sigMemHitLine;
-		sc_signal<int>              sigMemReplaceLine;
-		// The clock that will drive the CPU and Cache
+		
+		// Global clock signal
 		sc_clock clk;
-
-		// Connecting module ports with signals
-		mem.Port_Func(sigMemFunc);
-		mem.Port_Addr(sigMemAddr);
-		mem.Port_Data(sigMemData);
-		mem.Port_Done(sigMemDone);
-		mem.Port_Hit(sigMemHit);
-		mem.Port_Wr_Done(sigMemWr_Done);
-		mem.Port_Wr_Func(sigMemWr_Func);
-		mem.Port_Hit_Line(sigMemHitLine);
-		mem.Port_Replace_Line(sigMemReplaceLine);
-
-		cpu.Port_MemFunc(sigMemFunc);
-		cpu.Port_MemAddr(sigMemAddr);
-		cpu.Port_MemData(sigMemData);
-		cpu.Port_MemDone(sigMemDone);
-
-		mem.Port_CLK(clk);
-		cpu.Port_CLK(clk);
-#endif
-
-
-		int snooping = 1;
 
 		Bus bus("bus");
-
-		sc_clock clk;
-		//sc_signal<int>            sigBusWriter;
-		//sc_buffer<Cache::BUS_REQ> sigBusReq;
-		//sc_signal_rv<32>          sigBusAddr;
-
-		//bus.Port_BusAddr(sigBusAddr);	
-		//bus.Port_BusWriter(sigBusWriter);
-		//bus.Port_BusReq(sigBusReq);
+		
+		// Connect the global clock to Bus module clock
 		bus.Port_CLK(clk);
 
-		
-		//sigBusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
-		//sigBusReq.write(Cache::BUS_INVALID);
-
+		// Ports for Cache/CPU connection
 		sc_buffer<Cache::Function>  sigMemFunc[num_cpus];
 		sc_signal<int>              sigMemAddr[num_cpus];
 		sc_signal_rv<32>            sigMemData[num_cpus];
@@ -959,7 +843,6 @@ int sc_main(int argc, char* argv[])
 			/* Set IDs */
 			cpu[i]->cpu_id = i;
 			cache[i]->cache_id = i;
-			cache[i]->snooping = snooping;
 
 			/* Connect Cache to Bus */
 			cache[i]->Port_BusAddr(bus.Port_BusAddr);	
@@ -985,15 +868,13 @@ int sc_main(int argc, char* argv[])
 			cpu[i]->Port_CLK(clk);
 		}
 
-
-
 		cout << "Running (press CTRL+C to interrupt)... " << endl;
 
 		sc_trace_file *wf = sc_create_vcd_trace_file("CPU_MEM");
-		// Dump the desired signals
+
+		// Dump the clock signal
 		sc_trace(wf, clk, "clock");
-		//sc_trace(wf, sigMemFunc, "wr");//does not showup
-		//sc_trace(wf, sigMemDone, "ret");//does not showup
+
 		for(unsigned int i=0; i<num_cpus; i++)
 		{
 			char addr_cpu[16];
@@ -1004,72 +885,38 @@ int sc_main(int argc, char* argv[])
 			sprintf(data_cpu, "cpu_data_%d", i);
 			sprintf(hit_cache, "cache_hit_%d", i);
 
+			// Dump traces of each CPU and Cache signals
 			sc_trace(wf, sigMemAddr[i], addr_cpu);
 			sc_trace(wf, sigMemData[i], data_cpu);
 			sc_trace(wf, sigMemHit[i], hit_cache);
 		}
+
+		// Dump traces of Bus
 		sc_trace(wf, bus.Port_BusAddr , "addr_on_bus");
 		sc_trace(wf, bus.Port_BusWriter, "writer_on_bus");
 		sc_trace(wf, bus.Port_BusReq, "req_on_bus");
 
-
-		//sc_trace(wf, sigMemWr_Done, "wr_done");
-		//sc_trace(wf, sigMemWr_Func, "wr_func"); //function issued by cpu
-		//sc_trace(wf, sigMemHit, "Hit");
-		//sc_trace(wf, sigMemHitLine, "Hit_line");// show which set of cache line is hit
-		//sc_trace(wf, sigMemReplaceLine, "replace_line"); //show which set of cache line is replaced
-
-
 		// Start Simulation
-		//sc_start(42500,SC_NS);
-		char buffer[4096];
 		sc_start();
 
-
 		// Print statistics after simulation finished
-		stats_print(buffer);
+
+		stats_print();
 		cout<<endl;
-		strcat(buffer,"CPU\tProbeReads\tProbeWrites\n");
-		//printf(buffer,"CPU\tProbeReads\tProbeWrites\n");
-			char temp[1024];
+
+		printf("CPU\tProbeReads\tProbeWrites\n");
+
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
 		
-			sprintf(temp,"%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
-			strcat(buffer,temp);
+			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
 		}
 		cout<<endl;
-		strcat(buffer,"waits\treads\twrites\ttotal_access(r+w)\twait_per_access\n");
 
-		//printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
+		printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
 		long total_accesses = bus.reads+bus.writes;
-		memset(temp,0,sizeof(temp));
 
-		sprintf(temp,"%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
-
-		strcat(buffer,temp);
-		//memset(local,0,sizeof(local));
-		//char tmp[36]sc_time_stamp();
-		//sprintf(local,"Execution time = %s", sc_time_stamp());
-		//strcat(buffer,local);
-		printf("%s",buffer);
-#if 1
-		FILE * pFile;
-		pFile = fopen ("myfile.txt","w");
-		if (pFile!=NULL)
-		{
-			fputs(buffer, pFile);
-			//fputs ("fopen example",pFile);
-			fclose (pFile);
-		}
-//		fwrite (buffer , sizeof(char), sizeof(buffer), pFile);
-//		fclose (pFile);
-		
-		ofstream myfile;
-		myfile.open ("exec.txt");
-		myfile << sc_time_stamp();
-		myfile.close();
-#endif
+		printf("%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
 
 	}
 	catch (exception& e)
