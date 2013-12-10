@@ -1022,7 +1022,7 @@ int sc_main(int argc, char* argv[])
 
 		// Start Simulation
 		//sc_start(42500,SC_NS);
-		char buffer[2048];
+		char buffer[4096];
 		sc_start();
 
 
@@ -1031,10 +1031,10 @@ int sc_main(int argc, char* argv[])
 		cout<<endl;
 		strcat(buffer,"CPU\tProbeReads\tProbeWrites\n");
 		//printf(buffer,"CPU\tProbeReads\tProbeWrites\n");
+			char temp[1024];
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
 		
-			char temp[16];
 			sprintf(temp,"%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
 			strcat(buffer,temp);
 		}
@@ -1043,10 +1043,11 @@ int sc_main(int argc, char* argv[])
 
 		//printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
 		long total_accesses = bus.reads+bus.writes;
-		char local[128];
-		sprintf(local,"%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+		memset(temp,0,sizeof(temp));
 
-		strcat(buffer,local);
+		sprintf(temp,"%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+
+		strcat(buffer,temp);
 		//memset(local,0,sizeof(local));
 		//char tmp[36]sc_time_stamp();
 		//sprintf(local,"Execution time = %s", sc_time_stamp());
