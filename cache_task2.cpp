@@ -32,7 +32,9 @@
 
 #include <systemc.h>
 #include <iostream>
-#include <iomanip> 
+#include <iomanip>
+#include <string.h>
+#include <fstream> 
 #include "aca2009.h"
 
 using namespace std;
@@ -1019,25 +1021,54 @@ int sc_main(int argc, char* argv[])
 
 
 		// Start Simulation
-		sc_start(42500,SC_NS);
-		//sc_start();
+		//sc_start(42500,SC_NS);
+		char buffer[2048];
+		sc_start();
 
 
 		// Print statistics after simulation finished
-		stats_print();
+		stats_print(buffer);
 		cout<<endl;
-		printf("CPU\tProbeReads\tProbeWrites\n");
+		strcat(buffer,"CPU\tProbeReads\tProbeWrites\n");
+		//printf(buffer,"CPU\tProbeReads\tProbeWrites\n");
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
 		
-
-			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
+			char temp[16];
+			sprintf(temp,"%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
+			strcat(buffer,temp);
 		}
-		
-		printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
-		long total_accesses= bus.reads+bus.writes;
-		printf("%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)(bus.waits/total_accesses));
+		cout<<endl;
+		strcat(buffer,"waits\treads\twrites\ttotal_access(r+w)\twait_per_access\n");
 
+		//printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
+		long total_accesses = bus.reads+bus.writes;
+		char local[128];
+		sprintf(local,"%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+
+		strcat(buffer,local);
+		//memset(local,0,sizeof(local));
+		//char tmp[36]sc_time_stamp();
+		//sprintf(local,"Execution time = %s", sc_time_stamp());
+		//strcat(buffer,local);
+		printf("%s",buffer);
+#if 1
+		FILE * pFile;
+		pFile = fopen ("myfile.txt","w");
+		if (pFile!=NULL)
+		{
+			fputs(buffer, pFile);
+			//fputs ("fopen example",pFile);
+			fclose (pFile);
+		}
+//		fwrite (buffer , sizeof(char), sizeof(buffer), pFile);
+//		fclose (pFile);
+		
+		ofstream myfile;
+		myfile.open ("exec.txt");
+		myfile << sc_time_stamp();
+		myfile.close();
+#endif
 
 	}
 	catch (exception& e)
