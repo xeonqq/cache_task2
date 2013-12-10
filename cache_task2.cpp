@@ -271,8 +271,9 @@ SC_MODULE(Cache)
 #endif
 				for (int set = 0; set < 8; set++){ 
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
+#ifdef MASK
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
-
+#endif
 				}
 
 				if (f == FUNC_WRITE) 
@@ -587,7 +588,9 @@ SC_MODULE(Cache)
 #endif
 				for (int set = 0; set < 8; set++){
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
+#ifdef MASK
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
+#endif
 				}
 				cout<<endl;
 
