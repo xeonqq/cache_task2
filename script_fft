@@ -2,24 +2,24 @@ reset
 make cache_task2
 ./cache_task2.bin tracefiles/fft_16_p1.trf > /dev/null
 mv myfile.txt fft_1
-echo exec.txt >> fft_1
+cat exec.txt >> fft_1
 rm exec.txt
 rm myfile.txt
 ./cache_task2.bin tracefiles/fft_16_p2.trf > /dev/null
 mv myfile.txt fft_2
-echo exec.txt >> fft_2
+cat exec.txt >> fft_2
 rm exec.txt
 rm myfile.txt
 
 ./cache_task2.bin tracefiles/fft_16_p4.trf > /dev/null
 mv myfile.txt fft_4
-echo exec.txt >> fft_4
+cat exec.txt >> fft_4
 rm exec.txt
 rm myfile.txt
 
 ./cache_task2.bin tracefiles/fft_16_p8.trf > /dev/null
 mv myfile.txt fft_8
-echo exec.txt >> fft_8
+cat exec.txt >> fft_8
 rm exec.txt
 rm myfile.txt
 
