@@ -1,6 +1,26 @@
 reset
 make cache_task2
-./cache_task2.bin tracefiles/dbg_p1.trf > dump_dbg_1
-./cache_task2.bin tracefiles/dbg_p2.trf > dump_dbg_2
-./cache_task2.bin tracefiles/dbg_p4.trf > dump_dbg_4
-./cache_task2.bin tracefiles/dbg_p8.trf > dump_dbg_8
+./cache_task2.bin tracefiles/dbg_p1.trf > /dev/null
+mv myfile.txt dbg_1
+echo exec.txt >> dbg_1
+rm exec.txt
+rm myfile.txt
+ 
+./cache_task2.bin tracefiles/dbg_p2.trf > /dev/null
+mv myfile.txt dbg_2
+echo exec.txt >> dbg_2
+rm exec.txt
+rm myfile.txt
+
+./cache_task2.bin tracefiles/dbg_p4.trf > /dev/null
+mv myfile.txt dbg_4
+echo exec.txt >> dbg_4
+rm exec.txt
+rm myfile.txt
+
+./cache_task2.bin tracefiles/dbg_p8.trf > /dev/null
+mv myfile.txt dbg_8
+echo exec.txt >> dbg_8
+rm exec.txt
+rm myfile.txt
+
