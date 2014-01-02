@@ -55,31 +55,30 @@ class Bus_if : public virtual sc_interface
 		virtual bool flush(int writer, int address, int data) = 0;
 };
 
+
+
+#if 0
 typedef	struct 
 {
-	bool valid;
+	bool valid; //can be deleted later
+	State *current; //added to indicate its state
 	sc_uint<20> tag;
 	int data[8]; //8 words = 32 byte line size 
 } aca_cache_line;
-
-typedef	struct 
-{
-	aca_cache_line cache_line[CACHE_LINES];
-} aca_cache_set; 
-
-typedef	struct
-{
-	aca_cache_set cache_set[CACHE_SETS];
-} aca_cache;
+#endif 
 
 class Cache;
 class State
 {
-	virtual void processorRd(Cache *c)
-	{
-		//do nothing
-	}
+	public:
+		virtual void processorRd(Cache *c, int addr)
+		{
+			//do nothing
+		}
+		virtual void snoopedBusRd(Cache *c, int addr){}//for state Invalid etc, do nothing
+
 };
+
 
 
 
@@ -101,9 +100,44 @@ class Shared : public State
 class Exclusive : public State
 {
 
-	void snoopedBusRd(Cache *c);
+	void snoopedBusRd(Cache *c, int addr);
 
 };
+
+class aca_cache_line
+{
+	public:
+		State *current; //added to indicate its state
+		bool valid; //can be deleted later
+		sc_uint<20> tag;
+		int data[8]; //8 words = 32 byte line size 
+	
+		aca_cache_line()
+		{
+			setCurrent(new Invalid);
+		}
+
+		void setCurrent(State *s)
+		{
+			current = s;
+		}
+
+		State* getCurrent()
+		{
+			return current;
+		}
+
+};
+
+typedef	struct 
+{
+	aca_cache_line cache_line[CACHE_LINES];
+} aca_cache_set; 
+
+typedef	struct
+{
+	aca_cache_set cache_set[CACHE_SETS];
+} aca_cache;
 
 
 
@@ -144,7 +178,7 @@ SC_MODULE(Cache)
 		sc_in_rv<32> 	Port_BusWriter;
 		sc_in_rv<32> 	Port_BusAddr;
 		sc_in_rv<32> 	Port_BusReq;
-
+		sc_in_rv<32>    Port_BusData;
 		// Interface port to issue commands to the Bus
 		sc_port<Bus_if>	Port_Bus;
 
@@ -170,47 +204,75 @@ SC_MODULE(Cache)
 				valid_lines[i] = false;
 			for (int j = 0; j< CACHE_LINES; j++)
 				lru_table[j] = 0;
-
-			current = new Invalid();
+#if 0			
+			//initiallize all the cache lines to Invalid			
+			for (int i = 0; i< CACHE_LINES; i++)
+				for (int j = 0; j< CACHE_SETS; j++)
+					cache->cache_set[j].cache_line[i].current = new Invalid();
+#endif
 		}
-
 		~Cache() 
 		{
 			delete cache;
 			delete lru_table;
 
 		}
-		
-		   void setCurrent(State *s)
-		   {
-		   current = s;
 
-		   }
-		 
+		aca_cache_line* getCacheLine(int addr)
+		{
+			aca_cache_line *c_line;
+			sc_uint<20> tag = 0;
+			unsigned int line_index;
+			line_index = (addr & 0x00000FE0) >> 5;
+			tag = addr >> 12;
+
+			for ( int i=0; i <CACHE_SETS; i++ ){
+				c_line = &(cache->cache_set[i].cache_line[line_index]);
+				if (c_line->tag == tag)
+					return c_line;
+			}
+
+			return NULL;	
+		}
+
+		State* getCacheState(int addr)
+		{
+			
+			aca_cache_line *c_line;
+			c_line = getCacheLine(addr);
+			if (c_line != NULL)
+				return c_line->current;
+			return NULL;	
+		}
+
+
 	private:
-		   class State *current;
 
 		aca_cache *cache;
 		unsigned char *lru_table;
 		bool valid_lines[8];
-
+					
 		void processorRd(int addr)
 		{
-			current->processorRd(this, addr);
+		//	getCacheState(addr)->processorRd(this, addr);//not correct,dont know which line to put the data yet
 		}
 		void isShared(int addr, int data)
 		{
-			current->isShared(this, addr, data);
+		//	current->isShared(this, addr, data);
 		}
 		void notShared(int addr)
 		{
-			current->notShared(this, addr);
+		//	current->notShared(this, addr);
 		}
 
 		void snoopedBusRd(int addr)
 		{
-			current->snoopedBusRd(this, addr);
+			State *current;
+			current =  getCacheState(addr);
+			if (current != NULL)
+				current->snoopedBusRd(this, addr);
 		}
+
 
 
 		char *binary (unsigned char v) { 
@@ -585,13 +647,13 @@ SC_MODULE(Cache)
 void Invalid :: processorRd(Cache *c, int addr) 
 {
 	//check if the addr is shared by others
-	c->Port_Bus.read(c->cache_id, addr);
+	c->Port_Bus->read(c->cache_id, addr);
 }
-
+/*
 void Invalid :: isShared(Cache *c, int addr, int data) 
 {
 	//check if the addr is shared by others
-	c->Port_Bus.read(c->cache_id, addr, data);
+	c->Port_Bus->read(c->cache_id, addr, data);
 	c->setCurrent(new Shared());		
 	delete this;
 }
@@ -601,13 +663,15 @@ void Invalid :: notShared(Cache *c)
 	c->setCurrent(new Exclusive());		
 	delete this;
 }
+*/
 
-
-void Exclusive :: snoopedBusRd(Cache *c)
+void Exclusive :: snoopedBusRd(Cache *c,int addr)
 {
-	c->setCurrent(new Owned());
+	aca_cache_line* c_line = c->getCacheLine(addr);
+	c_line -> setCurrent(new Owned());
+	//flush
+	c->Port_Bus->flush(c->cache_id, addr, c_line->data[0]);//assume just flush one integer, cuz data does not matter in this lab
 	delete this;
-	flush();
 }
 
 void Cache::snoop()
@@ -624,12 +688,14 @@ void Cache::snoop()
 		if(writer != cache_id){
 			// Fetch the address on the bus to check its local cache
 			int addr= Port_BusAddr.read().to_int();
+			int req = Port_BusReq.read().to_int();
+			#if 0
 			aca_cache_line *c_line;
 			sc_uint<20> tag = 0;
 			unsigned int line_index;
 			line_index = (addr & 0x00000FE0) >> 5;
 			tag = addr >> 12;
-			int req = Port_BusReq.read().to_int();
+			#endif
 
 			switch(req)
 			{
@@ -637,7 +703,7 @@ void Cache::snoop()
 					/* do nothing
 					 */
 					ProbeReads++;
-				        this.snoopedBusRd();	
+				        snoopedBusRd(addr);	
 					break;
 
 				case BUS_RDX:
@@ -662,17 +728,8 @@ void Cache::snoop()
 					break;
 
 				case BUS_FLUSH:
-					for ( int i=0; i <CACHE_SETS; i++ ){
-						c_line = &(cache->cache_set[i].cache_line[line_index]);
-						if (c_line -> valid == true){
-							if ( c_line -> tag == tag){
-								
-							}
-
-						}
-					}
 					/*snooper detect that somebody flushes the thing I need */
-					this.isShared(addr,data);
+					//this.isShared(addr,data);
 					break;
 
 				default://BUS_INVALID command
