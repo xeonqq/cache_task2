@@ -1060,6 +1060,8 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_BusAddr(bus.Port_BusAddr);	
 			cache[i]->Port_BusWriter(bus.Port_BusWriter);	
 			cache[i]->Port_BusReq(bus.Port_BusReq);	
+			cache[i]->Port_BusData(bus.Port_BusData);	
+
 			cache[i]->Port_Bus(bus);
 
 			/* Connect Cache to CPU */
