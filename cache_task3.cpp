@@ -52,7 +52,8 @@ class Bus_if : public virtual sc_interface
 		virtual bool read(int writer, int address) = 0;
 		virtual bool write(int writer, int address, int data) = 0;
 		virtual bool readx(int writer, int address, int data) = 0;
-		virtual bool flush(int writer, int address, int data) = 0;
+		virtual bool upgr(int writer, int address) = 0;
+		virtual bool flush(int writer, int receiver, int address, int data) = 0;
 };
 
 
@@ -68,39 +69,144 @@ typedef	struct
 #endif 
 
 class Cache;
+
+/* Base class for States which have dummy implementations for all 
+ * the CPU/Bus requests of the MOESI protocol
+ */
+
 class State
 {
 	public:
+		enum STATE_TYPE 
+		{
+			STATE_MODIFIED,
+			STATE_OWNED,
+			STATE_EXCLUSIVE,
+			STATE_SHARED,
+			STATE_INVALID,
+		};	
+		
+		unsigned int state_type;
+
 		virtual void processorRd(Cache *c, int addr)
 		{
 			//do nothing
 		}
-		virtual void snoopedBusRd(Cache *c, int addr){}//for state Invalid etc, do nothing
 
+		virtual void processorWr(Cache *c, int addr, int data)
+		{
+			//do nothing
+		}
+
+		virtual void snoopedBusRd(Cache *c, int addr){
+			//do nothing 
+		}
+
+		virtual void snoopedBusRdX(Cache *c, int addr){
+			//do nothing
+		}
+
+		virtual void snoopedBusUpgr(Cache *c, int addr){
+			//do nothing 
+		}
 };
 
+// Override requests pertaining to MODIFIED state
 
-
-
-
-class Invalid : public State
+class Modified : public State
 {
-	void processorRd(Cache *c, int addr);
-	void isShared(Cache *c, int addr, int data);
-	void notShared(Cache *c, int addr);
+	public:
+		Modified()
+		{
+			state_type = STATE_MODIFIED;
+		}
+
+		// Override snoopedBusRd to perform Flush and change state to Owned
+		void snoopedBusRd(Cache *c, int addr);
+
+		// Override snoopedBusRdX to perform Flush and change state to Invalid
+		void snoopedBusRdX(Cache *c,int addr);
+	
 };
+// Override requests pertaining to OWNED state
 
 class Owned : public State
 {
+	public:
+		Owned()
+		{
+			state_type = STATE_OWNED;
+		}
 
+		// Override processorWr to perform BusUpgr change state to Modified
+		void processorWr(Cache *c, int addr, int data);
+	
+		// Override snoopedBusRdX to perform Flush and change state to Invalid
+		void snoopedBusRdX(Cache *c,int addr);
+
+		// Override snoopedBusUpgr and change state to Invalid
+		void snoopedBusUpgr(Cache *c, int addr);
 };
-class Shared : public State
-{
-};
+
+// Override requests pertaining to EXCLUSIVE state
+
 class Exclusive : public State
 {
+	public:
+		Exclusive()
+		{
+			state_type = STATE_EXCLUSIVE;
+		}
 
-	void snoopedBusRd(Cache *c, int addr);
+		
+		// Override processorWr to change state to Modified
+		void processorWr(Cache *c, int addr, int data);
+		
+		// Override snoopedBusRd to perform Flush and change state to Owned
+		void snoopedBusRd(Cache *c, int addr);
+
+		// Override snoopedBusRdX to perform Flush and change state to Invalid
+		void snoopedBusRdX(Cache *c,int addr);
+		
+
+};
+
+// Override requests pertaining to SHARED state
+
+class Shared : public State
+{
+	public:
+		Shared()
+		{
+			state_type = STATE_SHARED;
+		}
+		// Override processorWr to perform BusUpgr change state to Modified
+		void processorWr(Cache *c, int addr, int data);
+
+		// Override snoopedBusRdX to change state to Invalid
+		void snoopedBusRdX(Cache *c,int addr);
+
+		// Override snoopedBusUpgr to change state to Invalid
+		void snoopedBusUpgr(Cache *c, int addr);
+
+};
+
+// Override requests pertaining to INVALID state
+
+class Invalid : public State
+{
+	public:
+
+		Invalid()
+		{
+			state_type = STATE_INVALID;
+		}
+
+		// Override processorRd to perform BusRd
+		void processorRd(Cache *c, int addr);
+
+		// Override processorWr to perform BusRdX  
+		void processorWr(Cache *c, int addr, int data);
 
 };
 
@@ -108,10 +214,10 @@ class aca_cache_line
 {
 	public:
 		State *current; //added to indicate its state
-		bool valid; //can be deleted later
+		//bool valid; //can be deleted later
 		sc_uint<20> tag;
 		int data[8]; //8 words = 32 byte line size 
-	
+
 		aca_cache_line()
 		{
 			setCurrent(new Invalid);
@@ -150,8 +256,9 @@ SC_MODULE(Cache)
 			BUS_RD,
 			BUS_WR,
 			BUS_RDX,//-> seems have same response with BUS_WR
+			BUS_FLUSH,
+			BUS_UPGR,
 			BUS_INVALID,
-			BUS_FLUSH
 		};
 
 		enum Function 
@@ -245,24 +352,28 @@ SC_MODULE(Cache)
 			return NULL;	
 		}
 
-
+		State* getCacheState(aca_cache_line *c_line)
+		{
+			if (c_line != NULL)
+				return c_line->current;
+			return NULL;
+		}
+		
+#endif
 	private:
 
 		aca_cache *cache;
 		unsigned char *lru_table;
 		bool valid_lines[8];
-					
-		void processorRd(int addr)
+
+		void processorRd(aca_cache_line *c_line, int addr)
 		{
-		//	getCacheState(addr)->processorRd(this, addr);//not correct,dont know which line to put the data yet
+			getCacheState(c_line)->processorRd(this, addr);
 		}
-		void isShared(int addr, int data)
+
+		void processorWr(aca_cache_line *c_line, int addr, int data)
 		{
-		//	current->isShared(this, addr, data);
-		}
-		void notShared(int addr)
-		{
-		//	current->notShared(this, addr);
+			getCacheState(c_line)->processorWr(this, addr, data);
 		}
 
 		void snoopedBusRd(int addr)
@@ -272,8 +383,22 @@ SC_MODULE(Cache)
 			if (current != NULL)
 				current->snoopedBusRd(this, addr);
 		}
+		
+		void snoopedBusRdX(int addr)
+		{
+			State *current;
+			current =  getCacheState(addr);
+			if (current != NULL)
+				current->snoopedBusRdX(this, addr);
+		}
 
-
+		void snoopedBusUpgr(int addr)
+		{
+			State *current;
+			current =  getCacheState(addr);
+			if (current != NULL)
+				current->snoopedBusUpgr(this, addr);
+		}
 
 		char *binary (unsigned char v) { 
 			static char binstr[9] ; 
@@ -303,8 +428,8 @@ SC_MODULE(Cache)
 				sc_uint<20> tag = 0;
 				unsigned int line_index;
 				unsigned int word_index = 0;
-				bool hit   = false;
-				int hit_set = -1;
+//				bool hit   = false;
+//				int hit_set = -1;
 
 				//determine whether a hit
 				cout << "addr: " << hex << addr << endl;
@@ -312,10 +437,15 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
+
+#if 1
 				for ( int i=0; i <CACHE_SETS; i++ ){
 					c_line = &(cache->cache_set[i].cache_line[line_index]);
-					if (c_line -> valid == true){
-						valid_lines[i] = true;	
+					// If state is anything else other than INVALID, consider them as Valid
+
+					State *cur_state = c_line -> getCurrent();
+					if (cur_state -> state_type != State::STATE_INVALID){
+						valid_lines[i] = true;
 						if ( c_line -> tag == tag){
 							hit = true;
 							hit_set=i; 
@@ -326,6 +456,8 @@ SC_MODULE(Cache)
 						valid_lines[i] = false;
 					}
 				}
+#endif
+
 #ifdef MASK
 
 				cout << "before replacing--------------" <<endl;
@@ -345,12 +477,17 @@ SC_MODULE(Cache)
 
 					cout << sc_time_stamp() << ": MEM received write" << endl;
 					if (hit){ //write hit
-
+#if 0
 						Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
+#else
+						// Get the required cache line
+						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
+
+						processorWr(c_line,addr,cpu_data);
+#endif
 						stats_writehit(cache_id);
 
 						Port_Hit.write(true);
-						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
 						c_line -> data[word_index] = cpu_data;
 						wait();//consume 1 cycle
@@ -373,7 +510,12 @@ SC_MODULE(Cache)
 					}
 					else //write miss
 					{		
-						Port_Bus->readx(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+						//Port_Bus->readx(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
+
+						// Get the cache line which is invalid
+					       	
+
+						
 						stats_writemiss(cache_id);
 
 						Port_Hit.write(false);
@@ -384,13 +526,14 @@ SC_MODULE(Cache)
 								// write allocate
 								c_line = &(cache->cache_set[i].cache_line[line_index]);
 								cout << "Write waiting for global access " << cache_id <<endl; 
+
 								for (int j = 0; j < 8; j++)
 								{
 									wait(100); //fetch 8 * words data from memory to cache
 									c_line -> data[j] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 								}
 								c_line -> data[word_index] = cpu_data; //actual write from processor to cache line
-								c_line -> valid = true;
+								//c_line -> valid = true;
 								c_line -> tag = tag;
 								//update the lru table after the cache update
 								switch (i)
@@ -459,7 +602,7 @@ SC_MODULE(Cache)
 
 								// Replace the word in the cache line and make it valid
 								c_line -> data[word_index] =  cpu_data; //actual write from processor to cache line
-								c_line -> valid = true;
+								//c_line -> valid = true;
 								c_line -> tag = tag;
 								switch (set_index_toreplace)
 								{
@@ -535,7 +678,7 @@ SC_MODULE(Cache)
 									c_line -> data[j] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 								}
 								Port_Data.write(c_line -> data[word_index]); //return data to the CPU
-								c_line -> valid = true;
+								//c_line -> valid = true;
 								c_line -> tag = tag;
 								//update the lru table after the cache update
 								switch (i)
@@ -601,7 +744,7 @@ SC_MODULE(Cache)
 
 								// Replace the word in the cache line and make it valid
 								Port_Data.write(c_line -> data[word_index]);//read from the cache line and give it to CPU 
-								c_line -> valid = true;
+								//c_line -> valid = true;
 								c_line -> tag = tag;
 								switch (set_index_toreplace)
 								{
@@ -646,9 +789,16 @@ SC_MODULE(Cache)
  
 void Invalid :: processorRd(Cache *c, int addr) 
 {
-	//check if the addr is shared by others
+	//Issue a BusRd on the bus
 	c->Port_Bus->read(c->cache_id, addr);
 }
+
+void Invalid :: processorWr(Cache *c, int addr, int data) 
+{
+	//Issue a BusRdX on the bus
+	c->Port_Bus->readx(c->cache_id, addr, data);
+}
+
 /*
 void Invalid :: isShared(Cache *c, int addr, int data) 
 {
@@ -668,10 +818,23 @@ void Invalid :: notShared(Cache *c)
 void Exclusive :: snoopedBusRd(Cache *c,int addr)
 {
 	aca_cache_line* c_line = c->getCacheLine(addr);
-	c_line -> setCurrent(new Owned());
+	
+	// BUS_RD in Exclusive state changes state to Owned 
+	c_line -> setCurrent(new Owned);
 	//flush
-	c->Port_Bus->flush(c->cache_id, addr, c_line->data[0]);//assume just flush one integer, cuz data does not matter in this lab
-	delete this;
+	c->Port_Bus->flush(c->cache_id, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	//delete this;
+}
+
+void Exclusive :: snoopedBusRdX(Cache *c,int addr)
+{
+	aca_cache_line* c_line = c->getCacheLine(addr);
+	
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
+	//flush
+	c->Port_Bus->flush(c->cache_id, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	//delete this;
 }
 
 void Cache::snoop()
@@ -754,6 +917,7 @@ class Bus : public Bus_if,public sc_module
 		sc_signal_rv<32> Port_BusWriter;
 		sc_signal_rv<32> Port_BusAddr;
 		sc_signal_rv<32> Port_BusData;
+		sc_signal_rv<32> Port_BusReciever;
 
 		// SystemC Mutex to provide atomicity
 		sc_mutex bus;
@@ -772,12 +936,14 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusReciever.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			waits = 0;
 			reads = 0;
 			writes = 0; 
 			flushes = 0;
 		}
+
 		virtual bool read(int writer, int addr)
 		{
 			//Try to acquire the bus
@@ -790,7 +956,7 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(0x00);
+			Port_BusReq.write(Cache::BUS_RD);
 
 			//wait for everyone to revieve
 			wait();
@@ -820,7 +986,7 @@ class Bus : public Bus_if,public sc_module
 
 			Port_BusAddr.write(addr);
 			Port_BusWriter.write(writer);
-			Port_BusReq.write(0x01);
+			Port_BusReq.write(Cache::BUS_WR);
 
 			//wait for everyone to revieve
 			wait();
@@ -848,7 +1014,7 @@ class Bus : public Bus_if,public sc_module
 			writes++;
 
 			Port_BusAddr.write(addr);
-			Port_BusReq.write(0x02);
+			Port_BusReq.write(Cache::BUS_RDX);
 			Port_BusWriter.write(writer);
 
 			//wait for everyone to revieve
@@ -865,7 +1031,36 @@ class Bus : public Bus_if,public sc_module
 			return true;
 		}
 
-		virtual bool flush(int writer, int addr, int data) 
+		virtual bool upgr(int writer, int addr) 
+		{
+			//Try to acquire the bus
+			while(bus.trylock() == -1){
+				//Retry after 1 cycle
+				waits++;
+				wait();
+			}
+
+			writes++;
+
+			Port_BusAddr.write(addr);
+			Port_BusReq.write(Cache::BUS_UPGR);
+			Port_BusWriter.write(writer);
+
+			//wait for everyone to revieve
+			wait();
+
+			// Pull ports to tristate for future writes
+			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+			// Release the lock
+			bus.unlock();
+
+			return true;
+		}
+
+		virtual bool flush(int writer, int receiver, int addr, int data) 
 		{
 			//Try to acquire the bus
 			while(bus.trylock() == -1){
@@ -878,8 +1073,8 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write(addr);
 			Port_BusData.write(data);
 			Port_BusReq.write(Cache::BUS_FLUSH);
-
 			Port_BusWriter.write(writer);
+			Port_BusReciever.write(receiver);
 
 			//wait for everyone to revieve
 			wait();
