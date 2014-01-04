@@ -98,15 +98,15 @@ class State
 			//do nothing
 		}
 
-		virtual void snoopedBusRd(Cache *c, int addr){
+		virtual void snoopedBusRd(Cache *c, int addr, int requester){
 			//do nothing 
 		}
 
-		virtual void snoopedBusRdX(Cache *c, int addr){
+		virtual void snoopedBusRdX(Cache *c, int addr, int requester){
 			//do nothing
 		}
 
-		virtual void snoopedBusUpgr(Cache *c, int addr){
+		virtual void snoopedBusUpgr(Cache *c, int addr, int requester){
 			//do nothing 
 		}
 };
@@ -122,10 +122,10 @@ class Modified : public State
 		}
 
 		// Override snoopedBusRd to perform Flush and change state to Owned
-		void snoopedBusRd(Cache *c, int addr);
+		void snoopedBusRd(Cache *c, int addr, int requester);
 
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr);
+		void snoopedBusRdX(Cache *c,int addr, int requester);
 	
 };
 // Override requests pertaining to OWNED state
@@ -142,10 +142,10 @@ class Owned : public State
 		void processorWr(Cache *c, int addr, int data);
 	
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr);
+		void snoopedBusRdX(Cache *c, int addr, int requester);
 
 		// Override snoopedBusUpgr and change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr);
+		void snoopedBusUpgr(Cache *c, int addr, int requester);
 };
 
 // Override requests pertaining to EXCLUSIVE state
@@ -163,10 +163,10 @@ class Exclusive : public State
 		void processorWr(Cache *c, int addr, int data);
 		
 		// Override snoopedBusRd to perform Flush and change state to Owned
-		void snoopedBusRd(Cache *c, int addr);
+		void snoopedBusRd(Cache *c, int addr, int requester);
 
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr);
+		void snoopedBusRdX(Cache *c,int addr, int requester);
 		
 
 };
@@ -184,10 +184,10 @@ class Shared : public State
 		void processorWr(Cache *c, int addr, int data);
 
 		// Override snoopedBusRdX to change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr);
+		void snoopedBusRdX(Cache *c, int addr, int requester);
 
 		// Override snoopedBusUpgr to change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr);
+		void snoopedBusUpgr(Cache *c, int addr, int requester);
 
 };
 
@@ -358,8 +358,6 @@ SC_MODULE(Cache)
 				return c_line->current;
 			return NULL;
 		}
-		
-#endif
 	private:
 
 		aca_cache *cache;
@@ -376,28 +374,28 @@ SC_MODULE(Cache)
 			getCacheState(c_line)->processorWr(this, addr, data);
 		}
 
-		void snoopedBusRd(int addr)
+		void snoopedBusRd(int addr, int requester)
 		{
 			State *current;
 			current =  getCacheState(addr);
 			if (current != NULL)
-				current->snoopedBusRd(this, addr);
+				current->snoopedBusRd(this, addr, requester);
 		}
 		
-		void snoopedBusRdX(int addr)
+		void snoopedBusRdX(int addr, int requester)
 		{
 			State *current;
 			current =  getCacheState(addr);
 			if (current != NULL)
-				current->snoopedBusRdX(this, addr);
+				current->snoopedBusRdX(this, addr, requester);
 		}
 
-		void snoopedBusUpgr(int addr)
+		void snoopedBusUpgr(int addr, int requester)
 		{
 			State *current;
 			current =  getCacheState(addr);
 			if (current != NULL)
-				current->snoopedBusUpgr(this, addr);
+				current->snoopedBusUpgr(this, addr, requester);
 		}
 
 		char *binary (unsigned char v) { 
@@ -415,6 +413,8 @@ SC_MODULE(Cache)
 
 		void snoop();
 
+		aca_cache_line* updateLRU(int addr, bool *hit_check);
+
 		void execute() 
 		{
 			while (true)
@@ -428,8 +428,7 @@ SC_MODULE(Cache)
 				sc_uint<20> tag = 0;
 				unsigned int line_index;
 				unsigned int word_index = 0;
-//				bool hit   = false;
-//				int hit_set = -1;
+				bool hit = false;
 
 				//determine whether a hit
 				cout << "addr: " << hex << addr << endl;
@@ -437,26 +436,6 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
-
-#if 1
-				for ( int i=0; i <CACHE_SETS; i++ ){
-					c_line = &(cache->cache_set[i].cache_line[line_index]);
-					// If state is anything else other than INVALID, consider them as Valid
-
-					State *cur_state = c_line -> getCurrent();
-					if (cur_state -> state_type != State::STATE_INVALID){
-						valid_lines[i] = true;
-						if ( c_line -> tag == tag){
-							hit = true;
-							hit_set=i; 
-						}
-
-					}
-					else{
-						valid_lines[i] = false;
-					}
-				}
-#endif
 
 #ifdef MASK
 
@@ -471,297 +450,72 @@ SC_MODULE(Cache)
 #endif
 				}
 
+				c_line = updateLRU(addr,&hit);
+
 				if (f == FUNC_WRITE) 
 				{
 					int cpu_data = Port_Data.read().to_int();
 
 					cout << sc_time_stamp() << ": MEM received write" << endl;
-					if (hit){ //write hit
-#if 0
-						Port_Bus->write(cache_id, addr, cpu_data);//issue bus write for a write hit 
-#else
-						// Get the required cache line
-						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
 
-						processorWr(c_line,addr,cpu_data);
-#endif
-						stats_writehit(cache_id);
+					processorWr(c_line,addr,cpu_data);
+
+					if (hit){ //write hit
 
 						Port_Hit.write(true);
+						stats_writehit(cache_id);
 
 						c_line -> data[word_index] = cpu_data;
 						wait();//consume 1 cycle
 						cout << sc_time_stamp() << ": Cache write hit!" << endl;
-						//sth need to do with lru
-						switch (hit_set)
-						{
-							case 0: lru_table[line_index] |=0b1101000; break;
-							case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-							case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-							case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-							case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-							case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-							case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-							case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-							default: cout << "Damn here !!!!" << endl;
-
-						}
-
 					}
 					else //write miss
-					{		
-						//Port_Bus->readx(cache_id, addr, cpu_data);//issue bus readx when write miss -> didnt see rdx in this case
-
-						// Get the cache line which is invalid
-					       	
-
-						
-						stats_writemiss(cache_id);
-
+					{
 						Port_Hit.write(false);
+						stats_writemiss(cache_id);
 						cout << sc_time_stamp() << ": Cache write miss!" << endl;
 
-						for ( int i=0; i <CACHE_SETS; i++ ){
-							if (valid_lines[i] == false){ //use an invalid line
-								// write allocate
-								c_line = &(cache->cache_set[i].cache_line[line_index]);
-								cout << "Write waiting for global access " << cache_id <<endl; 
+						c_line -> tag = tag;
 
-								for (int j = 0; j < 8; j++)
-								{
-									wait(100); //fetch 8 * words data from memory to cache
-									c_line -> data[j] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-								}
-								c_line -> data[word_index] = cpu_data; //actual write from processor to cache line
-								//c_line -> valid = true;
-								c_line -> tag = tag;
-								//update the lru table after the cache update
-								switch (i)
-								{
-									case 0: lru_table[line_index] |=0b1101000; break;
-									case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-									case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-									case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-									case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-									case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-									case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-									case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-
-
-								}
-								break;
-
-							}
-#if 1
-							else if(i == CACHE_SETS-1){// all lines are valid
-								//lru
-								//write back the previous line to mem and replace the lru line 
-								int set_index_toreplace = 8;
-
-
-								if ( (lru_table[line_index]  & 0b1101000) == 0 ){ //find the cache line to replace
-									c_line = &(cache->cache_set[0].cache_line[line_index]);
-									set_index_toreplace = 0;
-								}
-								else if ( (lru_table[line_index]  & 0b1101000) == 0b0001000 ) {
-									c_line = &(cache->cache_set[1].cache_line[line_index]);
-									set_index_toreplace = 1;
-								}
-								else if ( (lru_table[line_index]  & 0b1100100) == 0b0100000 ) {
-									c_line = &(cache->cache_set[2].cache_line[line_index]);
-									set_index_toreplace = 2;
-								}
-								else if ( (lru_table[line_index]  & 0b1100100) == 0b0100100 ) {
-									c_line = &(cache->cache_set[3].cache_line[line_index]);
-									set_index_toreplace = 3;
-								}
-								else if ( (lru_table[line_index]  & 0b1010010) == 0b1000000 ) {
-									c_line = &(cache->cache_set[4].cache_line[line_index]);
-									set_index_toreplace = 4;
-								}
-								else if ( (lru_table[line_index]  & 0b1010010) == 0b1000010 ) {
-									c_line = &(cache->cache_set[5].cache_line[line_index]);
-									set_index_toreplace = 5;
-								}
-								else if ( (lru_table[line_index]  & 0b1010001) == 0b1010000 ) {
-									c_line = &(cache->cache_set[6].cache_line[line_index]);
-									set_index_toreplace = 6;
-								}
-								else if ( (lru_table[line_index]  & 0b1010001) == 0b1010001 ) {
-									c_line = &(cache->cache_set[7].cache_line[line_index]);
-									set_index_toreplace = 7;
-								}
-								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
-
-
-								// write allocate
-								for (int i = 0; i< 8; i++){
-									wait(100); //fetch 8 * words data from memory to cache
-									c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-								}
-
-								// Replace the word in the cache line and make it valid
-								c_line -> data[word_index] =  cpu_data; //actual write from processor to cache line
-								//c_line -> valid = true;
-								c_line -> tag = tag;
-								switch (set_index_toreplace)
-								{
-									case 0: lru_table[line_index] |=0b1101000; break;
-									case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-									case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-									case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-									case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-									case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-									case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-									case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-									default: cout << "Buggy here !!!!! should not come here" <<endl; 
-
-								}	
-
-							}
-#endif
+						// Write allocate
+						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
+							wait(100); //fetch 8 * words data from memory to cache
+							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 						}
+						c_line -> data[word_index] =  cpu_data; //actual write from processor to cache line
 					}
-#if 1
-					//adding this becuase of write through
-					for(int i=0; i<8;i++)//write the cache line back to the memory for both write his and miss
-						wait(100);
-#endif
 
 					Port_Done.write( RET_WRITE_DONE );
 				}
 				else//a read comes to cache
 				{
 					cout << sc_time_stamp() << ": MEM received read" << endl;
+					
+					processorRd(c_line,addr);
 
 					if (hit){ //read hit
-						stats_readhit(cache_id);// do nothing for a read hit.
-
 						Port_Hit.write(true);
-						//Port_Hit_Line.write(hit_set);
-						c_line = &(cache->cache_set[hit_set].cache_line[line_index]);
+						stats_readhit(cache_id);
 
 						Port_Data.write( c_line -> data[word_index] );
 						cout << sc_time_stamp() << ": Cache read hit!" << endl;
-						//some lru stuff needed to be done
-						switch (hit_set)
-						{	
-							case 0: lru_table[line_index] |=0b1101000; break;
-							case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-							case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-							case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-							case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-							case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-							case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-							case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-							default: cout << "Damn here !!!!" << endl;
-
-						}
-
 					}
 					else //read miss
-					{		
-						Port_Bus->read(cache_id, addr); // issue a bus read for a read miss
-						stats_readmiss(cache_id);
-
+					{
 						Port_Hit.write(false);
+						stats_readmiss(cache_id);
 						cout << sc_time_stamp() << ": Cache read miss!" << endl;
 
-						for ( int i=0; i <CACHE_SETS; i++ ){
-							if (valid_lines[i] == false){ //use an invalid line
-								// write allocate
-								c_line = &(cache->cache_set[i].cache_line[line_index]);
+						c_line -> tag = tag;
 
-								for (int j = 0; j < 8; j++)
-								{
-									wait(100); //fetch 8 * words data from memory to cache
-									c_line -> data[j] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-								}
-								Port_Data.write(c_line -> data[word_index]); //return data to the CPU
-								//c_line -> valid = true;
-								c_line -> tag = tag;
-								//update the lru table after the cache update
-								switch (i)
-								{	case 0: lru_table[line_index] |=0b1101000; break;
-									case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-									case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-									case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-									case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-									case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-									case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-									case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-								}
-								break;
-
-							}
-#if 1
-							else if(i == CACHE_SETS-1){// all lines are valid
-								//lru
-								int set_index_toreplace = 8;
-								if ( (lru_table[line_index]  & 0b1101000) == 0 ){ //find the cache line to replace
-									c_line = &(cache->cache_set[0].cache_line[line_index]);
-									set_index_toreplace = 0;
-								}
-								else if ( (lru_table[line_index]  & 0b1101000) == 0b0001000 ) {
-									c_line = &(cache->cache_set[1].cache_line[line_index]);
-									set_index_toreplace = 1;
-								}
-								else if ( (lru_table[line_index]  & 0b1100100) == 0b0100000 ) {
-									c_line = &(cache->cache_set[2].cache_line[line_index]);
-									set_index_toreplace = 2;
-								}
-								else if ( (lru_table[line_index]  & 0b1100100) == 0b0100100 ) {
-									c_line = &(cache->cache_set[3].cache_line[line_index]);
-									set_index_toreplace = 3;
-								}
-								else if ( (lru_table[line_index]  & 0b1010010) == 0b1000000 ) {
-									c_line = &(cache->cache_set[4].cache_line[line_index]);
-									set_index_toreplace = 4;
-								}
-								else if ( (lru_table[line_index]  & 0b1010010) == 0b1000010 ) {
-									c_line = &(cache->cache_set[5].cache_line[line_index]);
-									set_index_toreplace = 5;
-								}
-								else if ( (lru_table[line_index]  & 0b1010001) == 0b1010000 ) {
-									c_line = &(cache->cache_set[6].cache_line[line_index]);
-									set_index_toreplace = 6;
-								}
-								else if ( (lru_table[line_index]  & 0b1010001) == 0b1010001 ) {
-									c_line = &(cache->cache_set[7].cache_line[line_index]);
-									set_index_toreplace = 7;
-								}
-								cout<< "Replacing now the cache line in set ....." << set_index_toreplace << endl;
-
-								//write back the previous line to mem 
-								for(int i=0; i<8;i++)//write the cache line back to the memory
-									wait(100);
-
-								// write allocate
-								for (int i = 0; i< 8; i++){
-									wait(100); //fetch 8 * words data from memory to cache
-									c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-								}
-
-								// Replace the word in the cache line and make it valid
-								Port_Data.write(c_line -> data[word_index]);//read from the cache line and give it to CPU 
-								//c_line -> valid = true;
-								c_line -> tag = tag;
-								switch (set_index_toreplace)
-								{
-									case 0: lru_table[line_index] |=0b1101000; break;
-									case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
-									case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
-									case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
-									case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
-									case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
-									case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
-									case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
-									default: cout << "Damn here !!!!" << endl;
-
-								}
-							}
-#endif
+						// write allocate
+						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
+							wait(100); //fetch 8 * words data from memory to cache
+							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 						}
+						Port_Data.write(c_line -> data[word_index]); //return data to the CPU
+
+
 					}
 
 					Port_Done.write( RET_READ_DONE );
@@ -786,7 +540,84 @@ SC_MODULE(Cache)
 		}
 };
 
- 
+// Modified state overrided function implementations
+
+void Modified :: snoopedBusRd(Cache *c, int addr, int requester)
+{
+}
+
+void Modified :: snoopedBusRdX(Cache *c,int addr, int requester)
+{
+}
+
+// Owned state overrided function implementations
+
+void Owned :: processorWr(Cache *c, int addr, int data)
+{
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// Change state from Owned to Modified
+	c_line -> setCurrent(new Modified);
+	
+	// Issue BusUpgr consequently
+	c->Port_Bus->upgr(c->cache_id,addr);
+}
+
+void Owned :: snoopedBusRdX(Cache *c, int addr, int requester)
+{
+}
+
+void Owned :: snoopedBusUpgr(Cache *c, int addr, int requester)
+{
+}
+
+// Exclusive state overrided function implementation
+void Exclusive :: processorWr(Cache *c, int addr, int data)
+{
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// Change state from Exclusive to Modified
+	c_line -> setCurrent(new Modified);
+}
+
+void Exclusive :: snoopedBusRd(Cache *c,int addr,int requester)
+{
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// BUS_RD in Exclusive state changes state to Owned 
+	c_line -> setCurrent(new Owned);
+	//flush
+	c->Port_Bus->flush(c->cache_id,requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	//delete this;
+}
+
+void Exclusive :: snoopedBusRdX(Cache *c,int addr,int requester)
+{
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	//delete this;
+}
+
+// Invalid state overrided function implementation
+
+void Shared :: processorWr(Cache *c, int addr, int data)
+{
+}
+
+void Shared ::  snoopedBusRdX(Cache *c, int addr, int requester)
+{
+}
+
+void Shared :: snoopedBusUpgr(Cache *c, int addr, int requester)
+{
+}
+
+// Invalid state overrided function implementation
+
 void Invalid :: processorRd(Cache *c, int addr) 
 {
 	//Issue a BusRd on the bus
@@ -797,44 +628,6 @@ void Invalid :: processorWr(Cache *c, int addr, int data)
 {
 	//Issue a BusRdX on the bus
 	c->Port_Bus->readx(c->cache_id, addr, data);
-}
-
-/*
-void Invalid :: isShared(Cache *c, int addr, int data) 
-{
-	//check if the addr is shared by others
-	c->Port_Bus->read(c->cache_id, addr, data);
-	c->setCurrent(new Shared());		
-	delete this;
-}
-
-void Invalid :: notShared(Cache *c) 
-{
-	c->setCurrent(new Exclusive());		
-	delete this;
-}
-*/
-
-void Exclusive :: snoopedBusRd(Cache *c,int addr)
-{
-	aca_cache_line* c_line = c->getCacheLine(addr);
-	
-	// BUS_RD in Exclusive state changes state to Owned 
-	c_line -> setCurrent(new Owned);
-	//flush
-	c->Port_Bus->flush(c->cache_id, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	//delete this;
-}
-
-void Exclusive :: snoopedBusRdX(Cache *c,int addr)
-{
-	aca_cache_line* c_line = c->getCacheLine(addr);
-	
-	// BUS_RDX in Exclusive state changes state to Invalid
-	c_line -> setCurrent(new Invalid);
-	//flush
-	c->Port_Bus->flush(c->cache_id, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	//delete this;
 }
 
 void Cache::snoop()
@@ -866,7 +659,7 @@ void Cache::snoop()
 					/* do nothing
 					 */
 					ProbeReads++;
-				        snoopedBusRd(addr);	
+				        snoopedBusRd(addr,writer);	
 					break;
 
 				case BUS_RDX:
@@ -902,6 +695,137 @@ void Cache::snoop()
 		}
 		wait();
 	}
+
+}
+
+aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
+{
+
+	aca_cache_line *c_line;
+	sc_uint<20> tag = 0;
+	unsigned int line_index;
+	line_index = (addr & 0x00000FE0) >> 5;
+	tag = addr >> 12;
+	//bool hit   = false;
+	int hit_set = -1;
+
+	line_index = (addr & 0x00000FE0) >> 5;
+	tag = addr >> 12;
+
+	for ( int i=0; i <CACHE_SETS; i++ ){
+		c_line = &(cache->cache_set[i].cache_line[line_index]);
+		// If state is anything else other than INVALID, consider them as Valid
+
+		State *cur_state = c_line -> getCurrent();
+		if (cur_state -> state_type != State::STATE_INVALID){
+			valid_lines[i] = true;
+			if ( c_line -> tag == tag){
+				*hit_check = true;
+				hit_set=i; 
+			}
+
+		}
+		else{
+			valid_lines[i] = false;
+		}
+	}
+
+	if(*hit_check){
+		switch (hit_set)
+		{	
+			case 0: lru_table[line_index] |=0b1101000; break;
+			case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
+			case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
+			case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
+			case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
+			case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
+			case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
+			case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
+			default: cout << "Damn here !!!!" << endl;
+		}
+	}
+	else{
+		for ( int i=0; i <CACHE_SETS; i++ ){
+			if (valid_lines[i] == false){ //use an invalid line
+				// write allocate
+				c_line = &(cache->cache_set[i].cache_line[line_index]);
+				//update the lru table after the cache update
+				switch (i)
+				{
+					case 0: lru_table[line_index] |=0b1101000; break;
+					case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
+					case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
+					case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
+					case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
+					case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
+					case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
+					case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
+
+				}
+				break;
+
+			}
+			else if(i == CACHE_SETS-1){// all lines are valid
+				//lru
+				//write back the previous line to mem and replace the lru line 
+				int set_index_toreplace = 8;
+
+
+				if ( (lru_table[line_index]  & 0b1101000) == 0 ){ //find the cache line to replace
+					c_line = &(cache->cache_set[0].cache_line[line_index]);
+					set_index_toreplace = 0;
+				}
+				else if ( (lru_table[line_index]  & 0b1101000) == 0b0001000 ) {
+					c_line = &(cache->cache_set[1].cache_line[line_index]);
+					set_index_toreplace = 1;
+				}
+				else if ( (lru_table[line_index]  & 0b1100100) == 0b0100000 ) {
+					c_line = &(cache->cache_set[2].cache_line[line_index]);
+					set_index_toreplace = 2;
+				}
+				else if ( (lru_table[line_index]  & 0b1100100) == 0b0100100 ) {
+					c_line = &(cache->cache_set[3].cache_line[line_index]);
+					set_index_toreplace = 3;
+				}
+				else if ( (lru_table[line_index]  & 0b1010010) == 0b1000000 ) {
+					c_line = &(cache->cache_set[4].cache_line[line_index]);
+					set_index_toreplace = 4;
+				}
+				else if ( (lru_table[line_index]  & 0b1010010) == 0b1000010 ) {
+					c_line = &(cache->cache_set[5].cache_line[line_index]);
+					set_index_toreplace = 5;
+				}
+				else if ( (lru_table[line_index]  & 0b1010001) == 0b1010000 ) {
+					c_line = &(cache->cache_set[6].cache_line[line_index]);
+					set_index_toreplace = 6;
+				}
+				else if ( (lru_table[line_index]  & 0b1010001) == 0b1010001 ) {
+					c_line = &(cache->cache_set[7].cache_line[line_index]);
+					set_index_toreplace = 7;
+				}
+#if 1
+				// write back
+				for(int i=0; i<8;i++)//write the cache line back to the memory
+					wait(100);
+#endif
+				switch (set_index_toreplace)
+				{
+					case 0: lru_table[line_index] |=0b1101000; break;
+					case 1: lru_table[line_index]  = (lru_table[line_index]  & 0b0010111) | 0b1100000;break;
+					case 2: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000100;break;
+					case 3: lru_table[line_index]  = (lru_table[line_index]  & 0b0011011) | 0b1000000;break;
+					case 4: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010010;break;
+					case 5: lru_table[line_index]  = (lru_table[line_index]  & 0b0101101) | 0b0010000;break;
+					case 6: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110) | 0b0000001;break;
+					case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
+					default: cout << "Buggy here !!!!! should not come here" <<endl; 
+
+				}
+
+			}
+		}
+	}
+	return c_line;
 
 }
 
