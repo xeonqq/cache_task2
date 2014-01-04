@@ -87,30 +87,40 @@ class State
 			STATE_SHARED,
 			STATE_INVALID,
 		};	
-		
+
 		unsigned int state_type;
 
-		virtual void processorRd(Cache *c, int addr)
+		virtual void processorRd(Cache *c, aca_cache_line *c_line, int addr)
 		{
 			//do nothing
 		}
 
-		virtual void processorWr(Cache *c, int addr, int data)
+		virtual void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data)
 		{
 			//do nothing
 		}
 
-		virtual void snoopedBusRd(Cache *c, int addr, int requester){
+		virtual void snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester){
 			//do nothing 
 		}
 
-		virtual void snoopedBusRdX(Cache *c, int addr, int requester){
+		virtual void snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester){
 			//do nothing
 		}
 
-		virtual void snoopedBusUpgr(Cache *c, int addr){
+		virtual void snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr){
 			//do nothing 
 		}
+
+		void isShared(Cache *c, aca_cache_line *c_line, int addr){
+			//do nothing 
+		}
+
+		void notShared(Cache *c, aca_cache_line *c_line, int addr){
+			//do nothing 
+		}
+	
+
 };
 
 // Override requests pertaining to MODIFIED state
@@ -124,11 +134,11 @@ class Modified : public State
 		}
 
 		// Override snoopedBusRd to perform Flush and change state to Owned
-		void snoopedBusRd(Cache *c, int addr, int requester);
+		void snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester);
 
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr, int requester);
-	
+		void snoopedBusRdX(Cache *c, aca_cache_line *c_line,int addr, int requester);
+
 };
 // Override requests pertaining to OWNED state
 
@@ -141,13 +151,13 @@ class Owned : public State
 		}
 
 		// Override processorWr to perform BusUpgr change state to Modified
-		void processorWr(Cache *c, int addr, int data);
-	
+		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
+
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c, int addr, int requester);
+		void snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester);
 
 		// Override snoopedBusUpgr and change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr);
+		void snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr);
 };
 
 // Override requests pertaining to EXCLUSIVE state
@@ -160,16 +170,16 @@ class Exclusive : public State
 			state_type = STATE_EXCLUSIVE;
 		}
 
-		
+
 		// Override processorWr to change state to Modified
-		void processorWr(Cache *c, int addr, int data);
-		
+		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
+
 		// Override snoopedBusRd to perform Flush and change state to Owned
-		void snoopedBusRd(Cache *c, int addr, int requester);
+		void snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester);
 
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
-		void snoopedBusRdX(Cache *c,int addr, int requester);
-		
+		void snoopedBusRdX(Cache *c, aca_cache_line *c_line,int addr, int requester);
+
 
 };
 
@@ -183,13 +193,13 @@ class Shared : public State
 			state_type = STATE_SHARED;
 		}
 		// Override processorWr to perform BusUpgr change state to Modified
-		void processorWr(Cache *c, int addr, int data);
+		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
 
 		// Override snoopedBusRdX to change state to Invalid
-		void snoopedBusRdX(Cache *c, int addr, int requester);
+		void snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester);
 
 		// Override snoopedBusUpgr to change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr);
+		void snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr);
 
 };
 
@@ -205,10 +215,14 @@ class Invalid : public State
 		}
 
 		// Override processorRd to perform BusRd
-		void processorRd(Cache *c, int addr);
+		void processorRd(Cache *c, aca_cache_line *c_line, int addr);
 
 		// Override processorWr to perform BusRdX  
-		void processorWr(Cache *c, int addr, int data);
+		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
+
+		void isShared(Cache *c, aca_cache_line *c_line, int addr);
+
+		void notShared(Cache *c, aca_cache_line *c_line, int addr);
 
 };
 
@@ -295,7 +309,7 @@ SC_MODULE(Cache)
 
 		int cache_id;	
 		int snooping;
-		
+
 		bool shared;
 
 		SC_CTOR(Cache) 
@@ -331,7 +345,35 @@ SC_MODULE(Cache)
 			delete lru_table;
 
 		}
-#if 1			
+
+		aca_cache_line* getCacheLine(int addr)
+		{
+			aca_cache_line *c_line;
+			sc_uint<20> tag = 0;
+			unsigned int line_index;
+			line_index = (addr & 0x00000FE0) >> 5;
+			tag = addr >> 12;
+
+			for ( int i=0; i <CACHE_SETS; i++ ){
+				c_line = &(cache->cache_set[i].cache_line[line_index]);
+				// If state is anything else other than INVALID, consider them as Valid
+
+				State *cur_state = c_line -> getCurrent();
+				if (cur_state -> state_type != State::STATE_INVALID){
+					valid_lines[i] = true;
+					if ( c_line -> tag == tag){
+						return c_line;
+					}
+
+				}
+				else{
+					valid_lines[i] = false;
+				}
+			}
+			return NULL;	
+
+		}
+#if 0			
 
 		aca_cache_line* getCacheLine(int addr)
 		{
@@ -349,10 +391,10 @@ SC_MODULE(Cache)
 
 			return NULL;	
 		}
-
+#endif
 		State* getCacheState(int addr)
 		{
-			
+
 			aca_cache_line *c_line;
 			c_line = getCacheLine(addr);
 			if (c_line != NULL)
@@ -360,13 +402,6 @@ SC_MODULE(Cache)
 			return NULL;	
 		}
 
-		State* getCacheState(aca_cache_line *c_line)
-		{
-			if (c_line != NULL)
-				return c_line->current;
-			return NULL;
-		}
-#endif
 
 
 	private:
@@ -377,36 +412,33 @@ SC_MODULE(Cache)
 
 		void processorRd(aca_cache_line *c_line, int addr)
 		{
-			getCacheState(c_line)->processorRd(this, addr);
+			c_line -> getCurrent() -> processorRd(this, c_line, addr);
 		}
 
 		void processorWr(aca_cache_line *c_line, int addr, int data)
 		{
-			getCacheState(c_line)->processorWr(this, addr, data);
+			c_line -> getCurrent() ->processorWr(this, c_line, addr, data);
 		}
 
 		void snoopedBusRd(int addr, int requester)
 		{
-			State *current;
-			current =  getCacheState(addr);
-			if (current != NULL)
-				current->snoopedBusRd(this, addr, requester);
+			aca_cache_line c_line =  getCacheLine(addr);
+			if (c_line != NULL)
+				c_line -> getCurrent()->snoopedBusRd(this, c_line, addr, requester);
 		}
-		
+
 		void snoopedBusRdX(int addr, int requester)
 		{
-			State *current;
-			current =  getCacheState(addr);
+			aca_cache_line c_line =  getCacheLine(addr);
 			if (current != NULL)
-				current->snoopedBusRdX(this, addr, requester);
+				c_line -> getCurrent()->snoopedBusRdX(this, c_line, addr, requester);
 		}
 
 		void snoopedBusUpgr(int addr)
 		{
-			State *current;
-			current =  getCacheState(addr);
+			aca_cache_line c_line =  getCacheLine(addr);
 			if (current != NULL)
-				current->snoopedBusUpgr(this, addr);
+				c_line -> getCurrent() ->snoopedBusUpgr(this, c_line, addr);
 		}
 
 		char *binary (unsigned char v) { 
@@ -421,7 +453,7 @@ SC_MODULE(Cache)
 
 			return binstr ; 
 		} 
-		
+
 		void global_mem_read_access(aca_cache_line *c_line)
 		{
 			for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
@@ -439,14 +471,14 @@ SC_MODULE(Cache)
 			/* Change state accordingly */
 			if(!shared)
 			{
-				/* Change to state OWNED */
-				c_line -> setCurrent(new Owned);
+				c_line -> getCurrent() -> isShared(this, c_line);	
 			}
 			else
 			{
-				/* Change to state SHARED */
-				c_line -> setCurrent(new Shared);
+				c_line -> getCurrent() -> notShared(this, c_line);	
+
 			}
+			shared = false;
 
 		}
 
@@ -465,7 +497,7 @@ SC_MODULE(Cache)
 				}
 			}
 			/* Change state to Modified */
-			c_line -> setCurrent(new Modified);
+			shared = false;
 
 		}
 
@@ -553,7 +585,7 @@ SC_MODULE(Cache)
 				else//a read comes to cache
 				{
 					cout << sc_time_stamp() << ": MEM received read" << endl;
-					
+
 					processorRd(c_line,addr);
 
 					if (hit){ //read hit
@@ -610,132 +642,136 @@ SC_MODULE(Cache)
 
 // Modified state overrided function implementations
 
-void Modified :: snoopedBusRd(Cache *c, int addr, int requester)
+void Modified :: snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	
+
 	// BUS_RD in Exclusive state changes state to Owned 
 	c_line -> setCurrent(new Owned);
+	delete this;
 }
 
-void Modified :: snoopedBusRdX(Cache *c,int addr, int requester)
+void Modified :: snoopedBusRdX(Cache *c, aca_cache_line *c_line,int addr, int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	
+
 	// BUS_RDX in Exclusive state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
 // Owned state overrided function implementations
 
-void Owned :: processorWr(Cache *c, int addr, int data)
+void Owned :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// Issue a BusUpgr on the bus
 	c->Port_Bus->upgr(c->cache_id,addr);
-	
+
 	// Change state from Owned to Modified
 	c_line -> setCurrent(new Modified);
+	delete this;
 }
 
-void Owned :: snoopedBusRdX(Cache *c, int addr, int requester)
+void Owned :: snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	
+
 	// BUS_RDX in Exclusive state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
-void Owned :: snoopedBusUpgr(Cache *c, int addr)
+void Owned :: snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// BUS_RDX in Exclusive state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
 // Exclusive state overrided function implementation
-void Exclusive :: processorWr(Cache *c, int addr, int data)
+void Exclusive :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// Change state from Exclusive to Modified
 	c_line -> setCurrent(new Modified);
+	delete this;
 }
 
-void Exclusive :: snoopedBusRd(Cache *c,int addr,int requester)
+void Exclusive :: snoopedBusRd(Cache *c, aca_cache_line *c_line,int addr,int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	
+
 	// BUS_RD in Exclusive state changes state to Owned 
 	c_line -> setCurrent(new Owned);
+	delete this;
 }
 
-void Exclusive :: snoopedBusRdX(Cache *c,int addr,int requester)
+void Exclusive :: snoopedBusRdX(Cache *c, aca_cache_line *c_line,int addr,int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	
+
 	// BUS_RDX in Exclusive state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
 // Invalid state overrided function implementation
 
-void Shared :: processorWr(Cache *c, int addr, int data)
+void Shared :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// Issue a BusUpgr on the bus
 	c->Port_Bus->upgr(c->cache_id,addr);
 
 	// PR_WR in Shared state changes state to Modified
 	c_line -> setCurrent(new Modified);
+	delete this;
 }
 
-void Shared :: snoopedBusRdX(Cache *c, int addr, int requester)
+void Shared :: snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// BUS_RDX in Shared state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
-void Shared :: snoopedBusUpgr(Cache *c, int addr)
+void Shared :: snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr)
 {
-	aca_cache_line* c_line = c->getCacheLine(addr);
-
 	// BUS_RDX in Exclusive state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
+	delete this;
 }
 
 // Invalid state overrided function implementation
 
-void Invalid :: processorRd(Cache *c, int addr) 
+void Invalid :: processorRd(Cache *c, aca_cache_line *c_line, int addr) 
 {
 	//Issue a BusRd on the bus
 	c->Port_Bus->read(c->cache_id, addr);
 }
 
-void Invalid :: processorWr(Cache *c, int addr, int data) 
+void Invalid :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data) 
 {
 	//Issue a BusRdX on the bus
 	c->Port_Bus->readx(c->cache_id, addr, data);
+	c_line -> setCurrent(new Modified);
+	delete this;
+}
+
+
+void Invalid :: isShared(Cache *c, aca_cache_line *c_line) 
+{
+	c_line -> setCurrent(new Shared);
+	delete this;
+}
+
+void Invalid :: notShared(Cache *c, aca_cache_line *c_line) 
+{
+	c_line -> setCurrent(new Exclusive);
+	delete this;
 }
 
 void Cache::snoop()
@@ -765,7 +801,7 @@ void Cache::snoop()
 			{
 				case BUS_RD:
 					ProbeReads++;
-				        snoopedBusRd(addr,writer);	
+					snoopedBusRd(addr,writer);	
 					break;
 
 				case BUS_RDX:
@@ -787,10 +823,10 @@ void Cache::snoop()
 						shared = true;
 					}
 					break;
-				
+
 				case BUS_UPGR:
 					ProbeUpgrades++;
-					
+
 					/* Make the cache line Invalid */
 					snoopedBusUpgr(addr);
 					break;
@@ -1122,7 +1158,7 @@ class Bus : public Bus_if,public sc_module
 		}
 
 
-		
+
 
 
 };
