@@ -119,6 +119,8 @@ class State
 		void notShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
+		
+		void invalidate(aca_cache_line *c_line);
 	
 
 };
@@ -496,7 +498,7 @@ SC_MODULE(Cache)
 					break;
 				}
 			}
-			/* Change state to Modified */
+
 			shared = false;
 
 		}
@@ -639,6 +641,12 @@ SC_MODULE(Cache)
 			}
 		}
 };
+
+void State :: invalidate(aca_cache_line *c_line)
+{
+	c_line -> setCurrent(new Invalid);
+	delete this;	
+}
 
 // Modified state overrided function implementations
 
@@ -886,8 +894,9 @@ aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
 			case 7: lru_table[line_index]  = (lru_table[line_index]  & 0b0101110);break;
 			default: cout << "Damn here !!!!" << endl;
 		}
+		c_line=&(cache->cache_set[hit_set].cache_line[line_index]);
 	}
-	else{
+	else{//a miss
 		for ( int i=0; i <CACHE_SETS; i++ ){
 			if (valid_lines[i] == false){ //use an invalid line
 				// write allocate
@@ -964,7 +973,8 @@ aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
 					default: cout << "Buggy here !!!!! should not come here" <<endl; 
 
 				}
-
+				//make the cache line invalid before return it.
+ 				c_line -> getCurrent() -> invalidate(c_line);
 			}
 		}
 	}
