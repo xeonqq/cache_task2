@@ -360,17 +360,17 @@ SC_MODULE(Cache)
 				c_line = &(cache->cache_set[i].cache_line[line_index]);
 				// If state is anything else other than INVALID, consider them as Valid
 
-				State *cur_state = c_line -> getCurrent();
-				if (cur_state -> state_type != State::STATE_INVALID){
-					valid_lines[i] = true;
+				//State *cur_state = c_line -> getCurrent();
+				//if (cur_state -> state_type != State::STATE_INVALID){
+				//	valid_lines[i] = true;
 					if ( c_line -> tag == tag){
-						return c_line;
+						return c_line; //return the cache line regardless of invalid or not
 					}
 
-				}
-				else{
-					valid_lines[i] = false;
-				}
+				//}
+				//else{
+				//	valid_lines[i] = false;
+				//}
 			}
 			return NULL;	
 
@@ -473,11 +473,11 @@ SC_MODULE(Cache)
 			/* Change state accordingly */
 			if(!shared)
 			{
-				c_line -> getCurrent() -> isShared(this, c_line);	
+				c_line -> getCurrent() -> notShared(this, c_line);	
 			}
 			else
 			{
-				c_line -> getCurrent() -> notShared(this, c_line);	
+				c_line -> getCurrent() -> isShared(this, c_line);	
 
 			}
 			shared = false;
@@ -1161,7 +1161,7 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusData.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
-
+		        Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			// Release the lock
 			bus.unlock();
 			return true;
