@@ -391,7 +391,6 @@ SC_MODULE(Cache)
 
 			return NULL;	
 		}
-#endif
 		State* getCacheState(int addr)
 		{
 
@@ -402,6 +401,7 @@ SC_MODULE(Cache)
 			return NULL;	
 		}
 
+#endif
 
 
 	private:
@@ -1261,7 +1261,7 @@ SC_MODULE(CPU)
 				}
 				else
 				{
-					cout << sc_time_stamp() << ": CPU executes NOP" << endl;
+					//cout << sc_time_stamp() << ": CPU executes NOP" << endl;
 				}
 				// Advance one cycle in simulated time            
 				wait();
@@ -1381,19 +1381,19 @@ int sc_main(int argc, char* argv[])
 		stats_print();
 		cout<<endl;
 
-		printf("CPU\tProbeReads\tProbeWrites\n");
+		printf("CPU\tProbeReads\tProbeWrites\tProbeFlushes\tProbeUpgrades\n");
 
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
 
-			printf("%d\t%d\t%d\n", i, ProbeReads,ProbeWrites);
+			printf("%d\t%d\t\t%d\t\t%d\t\t%d\t\n", i, ProbeReads,ProbeWrites,ProbeFlushes,ProbeUpgrades);
 		}
 		cout<<endl;
 
-		printf("waits\treads\ttotal_access(r+w)\twait_per_access\n");
+		printf("waits\treads\twrites\ttotal_access(r+w)\twait_per_access\n");
 		long total_accesses = bus.reads+bus.writes;
 
-		printf("%ld\t%ld\t%ld\t%ld\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+		printf("%ld\t%ld\t%ld\t%ld\t\t\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
 
 	}
 	catch (exception& e)
