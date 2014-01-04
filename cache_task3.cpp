@@ -360,17 +360,17 @@ SC_MODULE(Cache)
 				c_line = &(cache->cache_set[i].cache_line[line_index]);
 				// If state is anything else other than INVALID, consider them as Valid
 
-				State *cur_state = c_line -> getCurrent();
-				if (cur_state -> state_type != State::STATE_INVALID){
-					valid_lines[i] = true;
+				//State *cur_state = c_line -> getCurrent();
+				//if (cur_state -> state_type != State::STATE_INVALID){
+					//valid_lines[i] = true;
 					if ( c_line -> tag == tag){
 						return c_line;
 					}
 
-				}
-				else{
-					valid_lines[i] = false;
-				}
+				//}
+				/*else{
+					//valid_lines[i] = false;
+				}*/
 			}
 			return NULL;	
 
@@ -1161,6 +1161,7 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusData.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			// Release the lock
 			bus.unlock();
