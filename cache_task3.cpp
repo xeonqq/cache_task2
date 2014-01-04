@@ -473,11 +473,11 @@ SC_MODULE(Cache)
 			/* Change state accordingly */
 			if(!shared)
 			{
-				c_line -> getCurrent() -> isShared(this, c_line);	
+				c_line -> getCurrent() -> notShared(this, c_line);	
 			}
 			else
 			{
-				c_line -> getCurrent() -> notShared(this, c_line);	
+				c_line -> getCurrent() -> isShared(this, c_line);	
 
 			}
 			shared = false;
@@ -529,7 +529,7 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
-
+#if 0
 #ifdef MASK
 
 				cout << "before replacing--------------" <<endl;
@@ -542,7 +542,7 @@ SC_MODULE(Cache)
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
-
+#endif
 				c_line = updateLRU(addr,&hit);
 
 				if (f == FUNC_WRITE) 
@@ -624,6 +624,7 @@ SC_MODULE(Cache)
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
 				}
+#if 0
 #ifdef MASK
 				//at here means a read or a write has happened
 				cout << "after replacing----------------------" <<endl;
@@ -637,6 +638,7 @@ SC_MODULE(Cache)
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
+#endif
 				cout<<endl;
 			}
 		}
