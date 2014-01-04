@@ -368,9 +368,10 @@ SC_MODULE(Cache)
 					}
 
 				//}
-				//else{
-				//	valid_lines[i] = false;
-				//}
+
+				/*else{
+					//valid_lines[i] = false;
+				}*/
 			}
 			return NULL;	
 
@@ -529,7 +530,7 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
-
+#if 0
 #ifdef MASK
 
 				cout << "before replacing--------------" <<endl;
@@ -542,7 +543,7 @@ SC_MODULE(Cache)
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
-
+#endif
 				c_line = updateLRU(addr,&hit);
 
 				if (f == FUNC_WRITE) 
@@ -624,6 +625,7 @@ SC_MODULE(Cache)
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
 				}
+#if 0
 #ifdef MASK
 				//at here means a read or a write has happened
 				cout << "after replacing----------------------" <<endl;
@@ -637,6 +639,7 @@ SC_MODULE(Cache)
 					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
+#endif
 				cout<<endl;
 			}
 		}
@@ -1161,7 +1164,12 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusData.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
+<<<<<<< HEAD
 		        Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
+=======
+			Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
+
+>>>>>>> ae2b60c21b17b9693ebd6c8fb241e4c539951c13
 			// Release the lock
 			bus.unlock();
 			return true;
