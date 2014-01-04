@@ -41,6 +41,8 @@ using namespace std;
 
 int ProbeWrites = 0;
 int ProbeReads = 0;
+int ProbeFlushes = 0;
+int ProbeUpgrades = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
@@ -106,7 +108,7 @@ class State
 			//do nothing
 		}
 
-		virtual void snoopedBusUpgr(Cache *c, int addr, int requester){
+		virtual void snoopedBusUpgr(Cache *c, int addr){
 			//do nothing 
 		}
 };
@@ -145,7 +147,7 @@ class Owned : public State
 		void snoopedBusRdX(Cache *c, int addr, int requester);
 
 		// Override snoopedBusUpgr and change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr, int requester);
+		void snoopedBusUpgr(Cache *c, int addr);
 };
 
 // Override requests pertaining to EXCLUSIVE state
@@ -187,7 +189,7 @@ class Shared : public State
 		void snoopedBusRdX(Cache *c, int addr, int requester);
 
 		// Override snoopedBusUpgr to change state to Invalid
-		void snoopedBusUpgr(Cache *c, int addr, int requester);
+		void snoopedBusUpgr(Cache *c, int addr);
 
 };
 
@@ -286,12 +288,15 @@ SC_MODULE(Cache)
 		sc_in_rv<32> 	Port_BusAddr;
 		sc_in_rv<32> 	Port_BusReq;
 		sc_in_rv<32>    Port_BusData;
+		sc_in_rv<32>    Port_Receiver;
+
 		// Interface port to issue commands to the Bus
 		sc_port<Bus_if>	Port_Bus;
 
 		int cache_id;	
 		int snooping;
-
+		
+		bool shared;
 
 		SC_CTOR(Cache) 
 		{
@@ -311,6 +316,8 @@ SC_MODULE(Cache)
 				valid_lines[i] = false;
 			for (int j = 0; j< CACHE_LINES; j++)
 				lru_table[j] = 0;
+
+			shared = false;
 #if 0			
 			//initiallize all the cache lines to Invalid			
 			for (int i = 0; i< CACHE_LINES; i++)
@@ -390,12 +397,12 @@ SC_MODULE(Cache)
 				current->snoopedBusRdX(this, addr, requester);
 		}
 
-		void snoopedBusUpgr(int addr, int requester)
+		void snoopedBusUpgr(int addr)
 		{
 			State *current;
 			current =  getCacheState(addr);
 			if (current != NULL)
-				current->snoopedBusUpgr(this, addr, requester);
+				current->snoopedBusUpgr(this, addr);
 		}
 
 		char *binary (unsigned char v) { 
@@ -410,10 +417,58 @@ SC_MODULE(Cache)
 
 			return binstr ; 
 		} 
+		
+		void global_mem_read_access(aca_cache_line *c_line)
+		{
+			for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
+				if(!shared)
+				{
+					wait(100); //fetch 8 * words data from memory to cache
+					c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
+				}
+				else
+				{
+					/* Data supplied by another cache which flushes */
+					break;
+				}
+			}
+			/* Change state accordingly */
+			if(!shared)
+			{
+				/* Change to state OWNED */
+				c_line -> setCurrent(new Owned);
+			}
+			else
+			{
+				/* Change to state SHARED */
+				c_line -> setCurrent(new Shared);
+			}
+
+		}
+
+		void global_mem_write_access(aca_cache_line *c_line)
+		{
+			for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
+				if(!shared)
+				{
+					wait(100); //fetch 8 * words data from memory to cache
+					c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
+				}
+				else
+				{
+					/* Data supplied by another cache which flushes */
+					break;
+				}
+			}
+			/* Change state to Modified */
+			c_line -> setCurrent(new Modified);
+
+		}
 
 		void snoop();
 
 		aca_cache_line* updateLRU(int addr, bool *hit_check);
+
 
 		void execute() 
 		{
@@ -476,12 +531,16 @@ SC_MODULE(Cache)
 						cout << sc_time_stamp() << ": Cache write miss!" << endl;
 
 						c_line -> tag = tag;
-
+#if 0
 						// Write allocate
 						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
 							wait(100); //fetch 8 * words data from memory to cache
 							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 						}
+#endif
+
+						global_mem_write_access(c_line);
+
 						c_line -> data[word_index] =  cpu_data; //actual write from processor to cache line
 					}
 
@@ -508,11 +567,16 @@ SC_MODULE(Cache)
 
 						c_line -> tag = tag;
 
+#if 0
 						// write allocate
 						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
 							wait(100); //fetch 8 * words data from memory to cache
 							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
 						}
+#endif
+
+						global_mem_read_access(c_line);
+
 						Port_Data.write(c_line -> data[word_index]); //return data to the CPU
 
 
@@ -544,10 +608,24 @@ SC_MODULE(Cache)
 
 void Modified :: snoopedBusRd(Cache *c, int addr, int requester)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	
+	// BUS_RD in Exclusive state changes state to Owned 
+	c_line -> setCurrent(new Owned);
 }
 
 void Modified :: snoopedBusRdX(Cache *c,int addr, int requester)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
 // Owned state overrided function implementations
@@ -556,19 +634,30 @@ void Owned :: processorWr(Cache *c, int addr, int data)
 {
 	aca_cache_line* c_line = c->getCacheLine(addr);
 
+	// Issue a BusUpgr on the bus
+	c->Port_Bus->upgr(c->cache_id,addr);
+	
 	// Change state from Owned to Modified
 	c_line -> setCurrent(new Modified);
-	
-	// Issue BusUpgr consequently
-	c->Port_Bus->upgr(c->cache_id,addr);
 }
 
 void Owned :: snoopedBusRdX(Cache *c, int addr, int requester)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
-void Owned :: snoopedBusUpgr(Cache *c, int addr, int requester)
+void Owned :: snoopedBusUpgr(Cache *c, int addr)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
 // Exclusive state overrided function implementation
@@ -584,36 +673,51 @@ void Exclusive :: snoopedBusRd(Cache *c,int addr,int requester)
 {
 	aca_cache_line* c_line = c->getCacheLine(addr);
 
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+	
 	// BUS_RD in Exclusive state changes state to Owned 
 	c_line -> setCurrent(new Owned);
-	//flush
-	c->Port_Bus->flush(c->cache_id,requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	//delete this;
 }
 
 void Exclusive :: snoopedBusRdX(Cache *c,int addr,int requester)
 {
 	aca_cache_line* c_line = c->getCacheLine(addr);
 
-	// BUS_RDX in Exclusive state changes state to Invalid
-	c_line -> setCurrent(new Invalid);
 	//flush
 	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
-	//delete this;
+	
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
 // Invalid state overrided function implementation
 
 void Shared :: processorWr(Cache *c, int addr, int data)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// Issue a BusUpgr on the bus
+	c->Port_Bus->upgr(c->cache_id,addr);
+
+	// PR_WR in Shared state changes state to Modified
+	c_line -> setCurrent(new Modified);
 }
 
-void Shared ::  snoopedBusRdX(Cache *c, int addr, int requester)
+void Shared :: snoopedBusRdX(Cache *c, int addr, int requester)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// BUS_RDX in Shared state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
-void Shared :: snoopedBusUpgr(Cache *c, int addr, int requester)
+void Shared :: snoopedBusUpgr(Cache *c, int addr)
 {
+	aca_cache_line* c_line = c->getCacheLine(addr);
+
+	// BUS_RDX in Exclusive state changes state to Invalid
+	c_line -> setCurrent(new Invalid);
 }
 
 // Invalid state overrided function implementation
@@ -632,32 +736,30 @@ void Invalid :: processorWr(Cache *c, int addr, int data)
 
 void Cache::snoop()
 {
-
 	while (true)
 	{
 		// Snoop for requests on Bus
 		wait(Port_BusReq.value_changed_event());
 		int writer = Port_BusWriter.read().to_int();
 		int data = Port_BusData.read().to_int();
+		int flush_recepient;
 
 		// If the writer on the bus is not myself, probe the bus
 		if(writer != cache_id){
 			// Fetch the address on the bus to check its local cache
 			int addr= Port_BusAddr.read().to_int();
 			int req = Port_BusReq.read().to_int();
-			#if 0
+#if 0
 			aca_cache_line *c_line;
 			sc_uint<20> tag = 0;
 			unsigned int line_index;
 			line_index = (addr & 0x00000FE0) >> 5;
 			tag = addr >> 12;
-			#endif
+#endif
 
 			switch(req)
 			{
 				case BUS_RD:
-					/* do nothing
-					 */
 					ProbeReads++;
 				        snoopedBusRd(addr,writer);	
 					break;
@@ -665,27 +767,28 @@ void Cache::snoop()
 				case BUS_RDX:
 
 				case BUS_WR:
-					/* Invalidate the cache line with 
-					 * the corresponding address
-					 */
-					/*
-					for ( int i=0; i <CACHE_SETS; i++ ){
-						c_line = &(cache->cache_set[i].cache_line[line_index]);
-						if (c_line -> valid == true){
-							if ( c_line -> tag == tag){
-								c_line -> valid = false;
-							}
-
-						}
-					}
-					*/
 					ProbeWrites++;
-
+					snoopedBusRdX(addr,writer);
 					break;
 
 				case BUS_FLUSH:
 					/*snooper detect that somebody flushes the thing I need */
-					//this.isShared(addr,data);
+					ProbeFlushes++;
+
+					/* Check if the flush is intended for my cache */
+					flush_recepient = Port_Receiver.read().to_int();
+					if(flush_recepient == cache_id)
+					{
+						/* Signal the execute thread to break the wait */
+						shared = true;
+					}
+					break;
+				
+				case BUS_UPGR:
+					ProbeUpgrades++;
+					
+					/* Make the cache line Invalid */
+					snoopedBusUpgr(addr);
 					break;
 
 				default://BUS_INVALID command
