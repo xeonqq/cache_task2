@@ -75,7 +75,7 @@ class Cache;
 /* Base class for States which have dummy implementations for all 
  * the CPU/Bus requests of the MOESI protocol
  */
-
+class aca_cache_line;
 class State
 {
 	public:
@@ -112,11 +112,11 @@ class State
 			//do nothing 
 		}
 
-		void isShared(Cache *c, aca_cache_line *c_line, int addr){
+		void isShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
 
-		void notShared(Cache *c, aca_cache_line *c_line, int addr){
+		void notShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
 	
@@ -220,9 +220,9 @@ class Invalid : public State
 		// Override processorWr to perform BusRdX  
 		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
 
-		void isShared(Cache *c, aca_cache_line *c_line, int addr);
+		void isShared(Cache *c, aca_cache_line *c_line);
 
-		void notShared(Cache *c, aca_cache_line *c_line, int addr);
+		void notShared(Cache *c, aca_cache_line *c_line);
 
 };
 
@@ -422,22 +422,22 @@ SC_MODULE(Cache)
 
 		void snoopedBusRd(int addr, int requester)
 		{
-			aca_cache_line c_line =  getCacheLine(addr);
+			aca_cache_line* c_line =  getCacheLine(addr);
 			if (c_line != NULL)
 				c_line -> getCurrent()->snoopedBusRd(this, c_line, addr, requester);
 		}
 
 		void snoopedBusRdX(int addr, int requester)
 		{
-			aca_cache_line c_line =  getCacheLine(addr);
-			if (current != NULL)
+			aca_cache_line* c_line =  getCacheLine(addr);
+			if (c_line != NULL)
 				c_line -> getCurrent()->snoopedBusRdX(this, c_line, addr, requester);
 		}
 
 		void snoopedBusUpgr(int addr)
 		{
-			aca_cache_line c_line =  getCacheLine(addr);
-			if (current != NULL)
+			aca_cache_line* c_line =  getCacheLine(addr);
+			if (c_line != NULL)
 				c_line -> getCurrent() ->snoopedBusUpgr(this, c_line, addr);
 		}
 
