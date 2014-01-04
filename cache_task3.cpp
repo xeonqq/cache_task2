@@ -331,6 +331,7 @@ SC_MODULE(Cache)
 			delete lru_table;
 
 		}
+#if 1			
 
 		aca_cache_line* getCacheLine(int addr)
 		{
@@ -365,6 +366,9 @@ SC_MODULE(Cache)
 				return c_line->current;
 			return NULL;
 		}
+#endif
+
+
 	private:
 
 		aca_cache *cache;
@@ -944,7 +948,7 @@ class Bus : public Bus_if,public sc_module
 		sc_signal_rv<32> Port_BusWriter;
 		sc_signal_rv<32> Port_BusAddr;
 		sc_signal_rv<32> Port_BusData;
-		sc_signal_rv<32> Port_BusReciever;
+		sc_signal_rv<32> Port_BusReceiver;
 
 		// SystemC Mutex to provide atomicity
 		sc_mutex bus;
@@ -963,7 +967,7 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
-			Port_BusReciever.write("ZZZZZZZZZZZZZZZZZZZZZ");
+			Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
 			waits = 0;
 			reads = 0;
@@ -1101,7 +1105,7 @@ class Bus : public Bus_if,public sc_module
 			Port_BusData.write(data);
 			Port_BusReq.write(Cache::BUS_FLUSH);
 			Port_BusWriter.write(writer);
-			Port_BusReciever.write(receiver);
+			Port_BusReceiver.write(receiver);
 
 			//wait for everyone to revieve
 			wait();
@@ -1283,6 +1287,7 @@ int sc_main(int argc, char* argv[])
 			cache[i]->Port_BusWriter(bus.Port_BusWriter);	
 			cache[i]->Port_BusReq(bus.Port_BusReq);	
 			cache[i]->Port_BusData(bus.Port_BusData);	
+			cache[i]->Port_Receiver(bus.Port_BusReceiver);	
 
 			cache[i]->Port_Bus(bus);
 
