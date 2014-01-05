@@ -46,7 +46,7 @@ int ProbeUpgrades = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
-#define MASK 
+//#define MASK 
 class Bus_if : public virtual sc_interface
 {
 
