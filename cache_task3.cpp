@@ -46,7 +46,7 @@ int ProbeUpgrades = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
-
+#define MASK 
 class Bus_if : public virtual sc_interface
 {
 
@@ -122,7 +122,27 @@ class State
 		
 		void invalidate(aca_cache_line *c_line);
 	
-
+		char getStateType(){
+			switch(state_type){
+				case STATE_MODIFIED:
+					return 'M';
+					break;
+				case STATE_OWNED:
+					return 'O';
+					break;
+				case STATE_EXCLUSIVE:
+					return 'E';
+					break;
+				case STATE_SHARED:
+					return 'S';
+					break;
+				case STATE_INVALID:
+					return 'I';
+					break;
+				default:
+					return 'Q';
+			}
+		}
 };
 
 // Override requests pertaining to MODIFIED state
@@ -253,6 +273,7 @@ class aca_cache_line
 		{
 			return current;
 		}
+		
 
 };
 
@@ -533,17 +554,15 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
-#if 0
+#if 1
 #ifdef MASK
 
 				cout << "before replacing--------------" <<endl;
 				cout<<"lru_table: "<<binary(lru_table[line_index])<<endl;
 				cout <<setw(8) << "set"<< setw(8) <<  "valid" << setw(8) <<  "tag" <<endl;
-#endif
 				for (int set = 0; set < 8; set++){ 
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
-#ifdef MASK
-					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
+					cout <<setw(8)<<  set <<setw(8) << c_line -> getCurrent()->getStateType() << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
 #endif
