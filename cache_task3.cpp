@@ -119,9 +119,9 @@ class State
 		virtual void notShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
-		
+
 		void invalidate(aca_cache_line *c_line);
-	
+
 		char getStateType(){
 			switch(state_type){
 				case STATE_MODIFIED:
@@ -273,7 +273,7 @@ class aca_cache_line
 		{
 			return current;
 		}
-		
+
 
 };
 
@@ -387,14 +387,14 @@ SC_MODULE(Cache)
 				//State *cur_state = c_line -> getCurrent();
 				//if (cur_state -> state_type != State::STATE_INVALID){
 				//	valid_lines[i] = true;
-					if ( c_line -> tag == tag){
-						return c_line; //return the cache line regardless of invalid or not
-					}
+				if ( c_line -> tag == tag){
+					return c_line; //return the cache line regardless of invalid or not
+				}
 
 				//}
 
 				/*else{
-					//valid_lines[i] = false;
+				//valid_lines[i] = false;
 				}*/
 			}
 			return NULL;	
@@ -503,7 +503,7 @@ SC_MODULE(Cache)
 			else
 			{
 				c_line -> getCurrent() -> isShared(this, c_line);	
-				
+
 
 			}
 			shared = false;
@@ -555,7 +555,6 @@ SC_MODULE(Cache)
 				tag = addr >> 12;
 				cout << "line_index: " << line_index <<  " tag: " <<tag << endl;
 				word_index = ( addr & 0x0000001C ) >> 2;
-#if 1
 #ifdef MASK
 
 				cout << "before replacing--------------" <<endl;
@@ -564,7 +563,6 @@ SC_MODULE(Cache)
 				for (int set = 0; set < 8; set++){ 
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
 					cout <<setw(8)<<  set <<setw(8) << c_line -> getCurrent()->getStateType() << setw(8)<< c_line -> tag <<endl; 
-#endif
 				}
 #endif
 				c_line = updateLRU(addr,&hit);
@@ -648,7 +646,6 @@ SC_MODULE(Cache)
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
 				}
-#if 1
 #ifdef MASK
 				//at here means a read or a write has happened
 				cout << "after replacing----------------------" <<endl;
@@ -658,10 +655,8 @@ SC_MODULE(Cache)
 				for (int set = 0; set < 8; set++){
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
 					cout <<setw(8)<<  set <<setw(8) << c_line -> getCurrent() -> getStateType() << setw(8)<< c_line -> tag <<endl; 
-#endif
 				}
 #endif
-				cout<<endl;
 			}
 		}
 };
@@ -1008,7 +1003,7 @@ aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
 
 				}
 				//make the cache line invalid before return it.
- 				c_line -> getCurrent() -> invalidate(c_line);
+				c_line -> getCurrent() -> invalidate(c_line);
 			}
 		}
 	}
