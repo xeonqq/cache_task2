@@ -583,13 +583,13 @@ SC_MODULE(Cache)
 
 						c_line -> data[word_index] = cpu_data;
 						wait();//consume 1 cycle
-						cout << sc_time_stamp() << ": Cache write hit!" << endl;
+						cout << sc_time_stamp() << ": Cache write hit!" << "Curent state is " << c_line -> getCurrent() -> getStateType() << endl;
 					}
 					else //write miss
 					{
 						Port_Hit.write(false);
 						stats_writemiss(cache_id);
-						cout << sc_time_stamp() << ": Cache write miss!" << endl;
+						cout << sc_time_stamp() << ": Cache write miss!"  << "Curent state is " << c_line -> getCurrent() -> getStateType() << endl;
 
 						c_line -> tag = tag;
 #if 0
@@ -618,13 +618,13 @@ SC_MODULE(Cache)
 						stats_readhit(cache_id);
 
 						Port_Data.write( c_line -> data[word_index] );
-						cout << sc_time_stamp() << ": Cache read hit!" << endl;
+						cout << sc_time_stamp() << ": Cache read hit!" << "Curent state is " << c_line -> getCurrent() -> getStateType() << endl;
 					}
 					else //read miss
 					{
 						Port_Hit.write(false);
 						stats_readmiss(cache_id);
-						cout << sc_time_stamp() << ": Cache read miss!" << endl;
+						cout << sc_time_stamp() << ": Cache read miss!" << "Curent state is " << c_line -> getCurrent() -> getStateType() << endl;
 
 						c_line -> tag = tag;
 
