@@ -156,6 +156,9 @@ class Owned : public State
 		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
 
 		// Override snoopedBusRdX to perform Flush and change state to Invalid
+		void snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester);
+
+		// Override snoopedBusRdX to perform Flush and change state to Invalid
 		void snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester);
 
 		// Override snoopedBusUpgr and change state to Invalid
@@ -419,28 +422,28 @@ SC_MODULE(Cache)
 
 		void processorWr(aca_cache_line *c_line, int addr, int data)
 		{
-			c_line -> getCurrent() ->processorWr(this, c_line, addr, data);
+			c_line -> getCurrent() -> processorWr(this, c_line, addr, data);
 		}
 
 		void snoopedBusRd(int addr, int requester)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
 			if (c_line != NULL)
-				c_line -> getCurrent()->snoopedBusRd(this, c_line, addr, requester);
+				c_line -> getCurrent() -> snoopedBusRd(this, c_line, addr, requester);
 		}
 
 		void snoopedBusRdX(int addr, int requester)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
 			if (c_line != NULL)
-				c_line -> getCurrent()->snoopedBusRdX(this, c_line, addr, requester);
+				c_line -> getCurrent() -> snoopedBusRdX(this, c_line, addr, requester);
 		}
 
 		void snoopedBusUpgr(int addr)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
 			if (c_line != NULL)
-				c_line -> getCurrent() ->snoopedBusUpgr(this, c_line, addr);
+				c_line -> getCurrent() -> snoopedBusUpgr(this, c_line, addr);
 		}
 
 		char *binary (unsigned char v) { 
@@ -684,6 +687,16 @@ void Owned :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data)
 	delete this;
 }
 
+void Owned :: snoopedBusRd(Cache *c, aca_cache_line *c_line, int addr, int requester)
+{
+	//flush
+	c->Port_Bus->flush(c->cache_id, requester, addr, rand()%44);//assume just random data as it is not concerned for this lab
+
+	// BUS_RD in Exclusive state changes state to Owned 
+	c_line -> setCurrent(new Owned);
+	delete this;
+}
+
 void Owned :: snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requester)
 {
 	//flush
@@ -862,8 +875,8 @@ aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
 	//bool hit   = false;
 	int hit_set = -1;
 
-	line_index = (addr & 0x00000FE0) >> 5;
-	tag = addr >> 12;
+	//line_index = (addr & 0x00000FE0) >> 5;
+	//tag = addr >> 12;
 
 	for ( int i=0; i <CACHE_SETS; i++ ){
 		c_line = &(cache->cache_set[i].cache_line[line_index]);
