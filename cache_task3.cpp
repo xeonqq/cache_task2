@@ -44,6 +44,8 @@ int ProbeReads = 0;
 int ProbeFlushes = 0;
 int ProbeUpgrades = 0;
 
+
+
 #define CACHE_SETS 8
 #define CACHE_LINES 128
 //#define MASK 
@@ -52,7 +54,7 @@ class Bus_if : public virtual sc_interface
 
 	public:
 		virtual bool read(int writer, int address) = 0;
-		virtual bool write(int writer, int address, int data) = 0;
+		//virtual bool write(int writer, int address, int data) = 0;
 		virtual bool readx(int writer, int address, int data) = 0;
 		virtual bool upgr(int writer, int address) = 0;
 		virtual bool flush(int writer, int receiver, int address, int data) = 0;
@@ -296,7 +298,7 @@ SC_MODULE(Cache)
 		enum BUS_REQ 
 		{
 			BUS_RD,
-			BUS_WR,
+			//BUS_WR,
 			BUS_RDX,//-> seems have same response with BUS_WR
 			BUS_FLUSH,
 			BUS_UPGR,
@@ -338,6 +340,10 @@ SC_MODULE(Cache)
 
 		bool shared;
 
+		int ProbeBusRd;
+		int ProbeBusRdx;
+		int ProbeBusUpgr;
+
 		SC_CTOR(Cache) 
 		{
 			// Main process
@@ -358,6 +364,10 @@ SC_MODULE(Cache)
 				lru_table[j] = 0;
 
 			shared = false;
+			ProbeBusRd = 0;
+			ProbeBusRdx = 0;
+			ProbeBusUpgr = 0;
+
 #if 0			
 			//initiallize all the cache lines to Invalid			
 			for (int i = 0; i< CACHE_LINES; i++)
@@ -450,22 +460,29 @@ SC_MODULE(Cache)
 		void snoopedBusRd(int addr, int requester)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
-			if (c_line != NULL)
+			if (c_line != NULL){
 				c_line -> getCurrent() -> snoopedBusRd(this, c_line, addr, requester);
+				ProbeBusRd++;
+			}
+
 		}
 
 		void snoopedBusRdX(int addr, int requester)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
-			if (c_line != NULL)
+			if (c_line != NULL){
 				c_line -> getCurrent() -> snoopedBusRdX(this, c_line, addr, requester);
+				ProbeBusRdx++;		
+			}
 		}
 
 		void snoopedBusUpgr(int addr)
 		{
 			aca_cache_line* c_line =  getCacheLine(addr);
-			if (c_line != NULL)
+			if (c_line != NULL){
 				c_line -> getCurrent() -> snoopedBusUpgr(this, c_line, addr);
+				ProbeBusUpgr++;
+			}		
 		}
 
 		char *binary (unsigned char v) { 
@@ -843,7 +860,7 @@ void Cache::snoop()
 
 				case BUS_RDX:
 
-				case BUS_WR:
+				//case BUS_WR:
 					ProbeWrites++;
 					snoopedBusRdX(addr,writer);
 					break;
@@ -1030,7 +1047,9 @@ class Bus : public Bus_if,public sc_module
 
 		long waits;
 		long reads;
-		long writes;
+		long readxs;
+		//long writes;
+		long upgrades;
 		long flushes;
 	public:
 		SC_CTOR(Bus)
@@ -1046,8 +1065,11 @@ class Bus : public Bus_if,public sc_module
 
 			waits = 0;
 			reads = 0;
-			writes = 0; 
-			flushes = 0;
+			//writes = 0; 
+			readxs=0;
+			upgrades=0;
+			flushes=0;
+
 		}
 
 		virtual bool read(int writer, int addr)
@@ -1078,7 +1100,7 @@ class Bus : public Bus_if,public sc_module
 			return true;
 
 		}
-
+#if 0
 		virtual bool write(int writer, int addr, int data) 
 		{
 			//Try to acquire the bus
@@ -1107,7 +1129,7 @@ class Bus : public Bus_if,public sc_module
 
 			return true;
 		}
-
+#endif
 		virtual bool readx(int writer, int addr, int data) 
 		{
 			//Try to acquire the bus
@@ -1117,7 +1139,7 @@ class Bus : public Bus_if,public sc_module
 				wait();
 			}
 
-			writes++;
+			readxs++;
 
 			Port_BusAddr.write(addr);
 			Port_BusReq.write(Cache::BUS_RDX);
@@ -1146,7 +1168,7 @@ class Bus : public Bus_if,public sc_module
 				wait();
 			}
 
-			writes++;
+			upgrades++;
 
 			Port_BusAddr.write(addr);
 			Port_BusReq.write(Cache::BUS_UPGR);
@@ -1415,13 +1437,15 @@ int sc_main(int argc, char* argv[])
 
 		// Start Simulation
 		sc_start();
+	//	sc_start(4,SC_NS);
 
 		// Print statistics after simulation finished
 
 		stats_print();
 		cout<<endl;
 
-		printf("CPU\tProbeReads\tProbeWrites\tProbeFlushes\tProbeUpgrades\n");
+#if 0
+		printf("CPU\tSnoopedReads\tSnoopedWrites\tSnoopedFlushes\tSnoopedUpgrades\n");
 
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
@@ -1429,12 +1453,28 @@ int sc_main(int argc, char* argv[])
 			printf("%d\t%d\t\t%d\t\t%d\t\t%d\t\n", i, ProbeReads,ProbeWrites,ProbeFlushes,ProbeUpgrades);
 		}
 		cout<<endl;
+#endif
 
-		printf("waits\treads\twrites\ttotal_access(r+w)\twait_per_access\n");
-		long total_accesses = bus.reads+bus.writes;
+		printf("CPU\tProbeBusRd\tProbeBusRdX\tProbeUpgrades\n");
 
-		printf("%ld\t%ld\t%ld\t%ld\t\t\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+		for(unsigned int i =0; i < num_cpus; i++)
+		{
+			printf("%d\t%d\t\t%d\t\t%d\t\n", i, cache[i]->ProbeBusRd,cache[i]->ProbeBusRdx,cache[i]->ProbeBusUpgr);
+		}
+		cout<<endl;
+
+		printf("BusRd\tBusRdx\tBusUpgr\tBusFlush\ttotal_access(r+w)\n");
+		long total_accesses = bus.reads + bus.readxs + bus.upgrades + bus.flushes;
+		printf("%ld\t%ld\t%ld\t%ld\t\t%ld\n",bus.reads, bus.readxs, bus.upgrades, bus.flushes, total_accesses);
+		cout<<endl;
+
+		printf("waits\twait_per_access\n");
+		printf("%ld\t%f\n",bus.waits,(double)((float)bus.waits/(float)total_accesses));
+		cout<<endl;
+
 		cout << "execution time: "<< sc_time_stamp() << endl;
+		cout<<endl;
+
 
 	}
 	catch (exception& e)
