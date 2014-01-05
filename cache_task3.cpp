@@ -112,11 +112,11 @@ class State
 			//do nothing 
 		}
 
-		void isShared(Cache *c, aca_cache_line *c_line){
+		virtual void isShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
 
-		void notShared(Cache *c, aca_cache_line *c_line){
+		virtual void notShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
 		}
 		
