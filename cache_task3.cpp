@@ -48,7 +48,7 @@ int ProbeUpgrades = 0;
 
 #define CACHE_SETS 8
 #define CACHE_LINES 128
-//#define MASK 
+#define MASK 
 class Bus_if : public virtual sc_interface
 {
 
@@ -1436,8 +1436,8 @@ int sc_main(int argc, char* argv[])
 		sc_trace(wf, bus.Port_BusReq, "req_on_bus");
 
 		// Start Simulation
-		sc_start();
-	//	sc_start(4,SC_NS);
+		//sc_start();
+		sc_start(4000000,SC_NS);
 
 		// Print statistics after simulation finished
 
