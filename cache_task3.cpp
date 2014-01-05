@@ -1177,12 +1177,8 @@ class Bus : public Bus_if,public sc_module
 			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusData.write("ZZZZZZZZZZZZZZZZZZZZZ");
 			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
-<<<<<<< HEAD
-		        Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
-=======
 			Port_BusReceiver.write("ZZZZZZZZZZZZZZZZZZZZZ");
 
->>>>>>> ae2b60c21b17b9693ebd6c8fb241e4c539951c13
 			// Release the lock
 			bus.unlock();
 			return true;
