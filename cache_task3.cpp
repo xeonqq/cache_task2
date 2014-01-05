@@ -118,7 +118,6 @@ class State
 
 		virtual void notShared(Cache *c, aca_cache_line *c_line){
 			//do nothing 
-			cout<<"base print: not shared"<<endl;
 		}
 		
 		void invalidate(aca_cache_line *c_line);
@@ -500,14 +499,10 @@ SC_MODULE(Cache)
 			if(!shared)
 			{
 				c_line -> getCurrent() -> notShared(this, c_line);	
-				cout<<"current state is: "<<c_line ->getCurrent()->getStateType()<<endl; 
-				cout<<"cache line not shared"<<endl;
 			}
 			else
 			{
 				c_line -> getCurrent() -> isShared(this, c_line);	
-				cout<<"current state is: "<<c_line ->getCurrent()->getStateType()<<endl; 
-				cout<<"cache line shared"<<endl;
 				
 
 			}
@@ -818,7 +813,6 @@ void Invalid :: isShared(Cache *c, aca_cache_line *c_line)
 void Invalid :: notShared(Cache *c, aca_cache_line *c_line) 
 {
 	c_line -> setCurrent(new Exclusive);
-	cout<<"set the state from invalid to exclusive";
 	delete this;
 }
 
@@ -1445,6 +1439,7 @@ int sc_main(int argc, char* argv[])
 		long total_accesses = bus.reads+bus.writes;
 
 		printf("%ld\t%ld\t%ld\t%ld\t\t\t%f\n",bus.waits, bus.reads, bus.writes, total_accesses,(double)((float)bus.waits/(float)total_accesses));
+		cout << "execution time: "<< sc_time_stamp() << endl;
 
 	}
 	catch (exception& e)
