@@ -647,18 +647,16 @@ SC_MODULE(Cache)
 					wait();
 					Port_Data.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
 				}
-#if 0
+#if 1
 #ifdef MASK
 				//at here means a read or a write has happened
 				cout << "after replacing----------------------" <<endl;
 				cout <<"lru_table: "<<binary(lru_table[line_index])<<endl;
 				//cout <<"use invalid line in set: "<<
 				cout <<setw(8) << "set"<< setw(8) <<  "valid" << setw(8) <<  "tag" <<endl;
-#endif
 				for (int set = 0; set < 8; set++){
 					c_line = &(cache->cache_set[set].cache_line[line_index]);
-#ifdef MASK
-					cout <<setw(8)<<  set <<setw(8) << c_line -> valid << setw(8)<< c_line -> tag <<endl; 
+					cout <<setw(8)<<  set <<setw(8) << c_line -> getCurrent() -> getStateType() << setw(8)<< c_line -> tag <<endl; 
 #endif
 				}
 #endif
