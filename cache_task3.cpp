@@ -122,6 +122,10 @@ class State
 			//do nothing 
 		}
 
+		virtual void memWriteDone(Cache *c, aca_cache_line *c_line){
+			//do nothing 
+		}
+
 		void invalidate(aca_cache_line *c_line);
 
 		char getStateType(){
@@ -250,7 +254,9 @@ class Invalid : public State
 		void isShared(Cache *c, aca_cache_line *c_line);
 
 		void notShared(Cache *c, aca_cache_line *c_line);
-
+		
+		void memWriteDone(Cache *c, aca_cache_line *c_line);
+		
 };
 
 class aca_cache_line
@@ -541,6 +547,8 @@ SC_MODULE(Cache)
 					break;
 				}
 			}
+			
+			c_line -> getCurrent() -> memWriteDone(this, c_line);
 
 			shared = false;
 
@@ -811,8 +819,8 @@ void Invalid :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data
 {
 	//Issue a BusRdX on the bus
 	c->Port_Bus->readx(c->cache_id, addr, data);
-	c_line -> setCurrent(new Modified);
-	delete this;
+	//c_line -> setCurrent(new Modified);
+	//delete this;
 }
 
 
@@ -825,6 +833,12 @@ void Invalid :: isShared(Cache *c, aca_cache_line *c_line)
 void Invalid :: notShared(Cache *c, aca_cache_line *c_line) 
 {
 	c_line -> setCurrent(new Exclusive);
+	delete this;
+}
+
+void Invalid :: memWriteDone(Cache *c, aca_cache_line *c_line) 
+{
+	c_line -> setCurrent(new Modified);
 	delete this;
 }
 
