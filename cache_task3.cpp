@@ -1450,8 +1450,8 @@ int sc_main(int argc, char* argv[])
 		sc_trace(wf, bus.Port_BusReq, "req_on_bus");
 
 		// Start Simulation
-		//sc_start();
-		sc_start(4000000,SC_NS);
+		sc_start();
+		//sc_start(4000000,SC_NS);
 
 		// Print statistics after simulation finished
 
@@ -1473,13 +1473,13 @@ int sc_main(int argc, char* argv[])
 
 		for(unsigned int i =0; i < num_cpus; i++)
 		{
-			printf("%d\t%d\t\t%d\t\t%d\t\n", i, cache[i]->ProbeBusRd,cache[i]->ProbeBusRdx,cache[i]->ProbeBusUpgr);
+			printf("%d\t%d\t%d\t%d\t\n", i, cache[i]->ProbeBusRd,cache[i]->ProbeBusRdx,cache[i]->ProbeBusUpgr);
 		}
 		cout<<endl;
 
 		printf("BusRd\tBusRdx\tBusUpgr\tBusFlush\ttotal_access(r+w)\n");
 		long total_accesses = bus.reads + bus.readxs + bus.upgrades + bus.flushes;
-		printf("%ld\t%ld\t%ld\t%ld\t\t%ld\n",bus.reads, bus.readxs, bus.upgrades, bus.flushes, total_accesses);
+		printf("%ld\t%ld\t%ld\t%ld\t%ld\n",bus.reads, bus.readxs, bus.upgrades, bus.flushes, total_accesses);
 		cout<<endl;
 
 		printf("waits\twait_per_access\n");
