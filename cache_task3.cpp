@@ -1,5 +1,5 @@
 /*
-// File: task_1.cpp
+// File: task_3.cpp
 //              
 // Framework to implement Task 1 of the Advances in Computer Architecture lab 
 // session. This uses the ACA 2009 library to interface with tracefiles which
@@ -54,23 +54,12 @@ class Bus_if : public virtual sc_interface
 
 	public:
 		virtual bool read(int writer, int address) = 0;
-		//virtual bool write(int writer, int address, int data) = 0;
 		virtual bool readx(int writer, int address, int data) = 0;
 		virtual bool upgr(int writer, int address) = 0;
 		virtual bool flush(int writer, int receiver, int address, int data) = 0;
 };
 
 
-
-#if 0
-typedef	struct 
-{
-	bool valid; //can be deleted later
-	State *current; //added to indicate its state
-	sc_uint<20> tag;
-	int data[8]; //8 words = 32 byte line size 
-} aca_cache_line;
-#endif 
 
 class Cache;
 
@@ -251,10 +240,13 @@ class Invalid : public State
 		// Override processorWr to perform BusRdX  
 		void processorWr(Cache *c, aca_cache_line *c_line, int addr, int data);
 
+		// Override isShared to perform state change if the cache line is shared   
 		void isShared(Cache *c, aca_cache_line *c_line);
 
+		// Override notShared to perform state change if the cache line is not shared   
 		void notShared(Cache *c, aca_cache_line *c_line);
 		
+		// Override memWriteDone to perform state change if globle mem access is done   
 		void memWriteDone(Cache *c, aca_cache_line *c_line);
 		
 };
@@ -263,7 +255,6 @@ class aca_cache_line
 {
 	public:
 		State *current; //added to indicate its state
-		//bool valid; //can be deleted later
 		sc_uint<20> tag;
 		int data[8]; //8 words = 32 byte line size 
 
@@ -304,8 +295,7 @@ SC_MODULE(Cache)
 		enum BUS_REQ 
 		{
 			BUS_RD,
-			//BUS_WR,
-			BUS_RDX,//-> seems have same response with BUS_WR
+			BUS_RDX,
 			BUS_FLUSH,
 			BUS_UPGR,
 			BUS_INVALID,
@@ -344,6 +334,7 @@ SC_MODULE(Cache)
 		int cache_id;	
 		int snooping;
 
+		//variable to indicate whether the cache line is shared by other caches
 		bool shared;
 
 		int ProbeBusRd;
@@ -374,12 +365,6 @@ SC_MODULE(Cache)
 			ProbeBusRdx = 0;
 			ProbeBusUpgr = 0;
 
-#if 0			
-			//initiallize all the cache lines to Invalid			
-			for (int i = 0; i< CACHE_LINES; i++)
-				for (int j = 0; j< CACHE_SETS; j++)
-					cache->cache_set[j].cache_line[i].current = new Invalid();
-#endif
 		}
 		~Cache() 
 		{
@@ -398,53 +383,12 @@ SC_MODULE(Cache)
 
 			for ( int i=0; i <CACHE_SETS; i++ ){
 				c_line = &(cache->cache_set[i].cache_line[line_index]);
-				// If state is anything else other than INVALID, consider them as Valid
-
-				//State *cur_state = c_line -> getCurrent();
-				//if (cur_state -> state_type != State::STATE_INVALID){
-				//	valid_lines[i] = true;
 				if ( c_line -> tag == tag){
 					return c_line; //return the cache line regardless of invalid or not
 				}
-
-				//}
-
-				/*else{
-				//valid_lines[i] = false;
-				}*/
 			}
 			return NULL;	
-
 		}
-#if 0			
-
-		aca_cache_line* getCacheLine(int addr)
-		{
-			aca_cache_line *c_line;
-			sc_uint<20> tag = 0;
-			unsigned int line_index;
-			line_index = (addr & 0x00000FE0) >> 5;
-			tag = addr >> 12;
-
-			for ( int i=0; i <CACHE_SETS; i++ ){
-				c_line = &(cache->cache_set[i].cache_line[line_index]);
-				if (c_line->tag == tag)
-					return c_line;
-			}
-
-			return NULL;	
-		}
-		State* getCacheState(int addr)
-		{
-
-			aca_cache_line *c_line;
-			c_line = getCacheLine(addr);
-			if (c_line != NULL)
-				return c_line->current;
-			return NULL;	
-		}
-
-#endif
 
 
 	private:
@@ -616,13 +560,6 @@ SC_MODULE(Cache)
 						cout << sc_time_stamp() << ": Cache write miss!"  << "Curent state is " << c_line -> getCurrent() -> getStateType() << endl;
 
 						c_line -> tag = tag;
-#if 0
-						// Write allocate
-						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
-							wait(100); //fetch 8 * words data from memory to cache
-							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-						}
-#endif
 
 						global_mem_write_access(c_line);
 
@@ -652,13 +589,6 @@ SC_MODULE(Cache)
 
 						c_line -> tag = tag;
 
-#if 0
-						// write allocate
-						for (int i = 0; i< 8; i++){//here I think can be interrupted by someone else's flush
-							wait(100); //fetch 8 * words data from memory to cache
-							c_line -> data[i] = rand()%10000; //load the memory line(32bytes) to the appropriate cache line
-						}
-#endif
 
 						global_mem_read_access(c_line);
 
@@ -748,7 +678,7 @@ void Owned :: snoopedBusRdX(Cache *c, aca_cache_line *c_line, int addr, int requ
 
 void Owned :: snoopedBusUpgr(Cache *c, aca_cache_line *c_line, int addr)
 {
-	// BUS_RDX in Exclusive state changes state to Invalid
+	// BUS_RDX in Owned state changes state to Invalid
 	c_line -> setCurrent(new Invalid);
 	delete this;
 }
@@ -819,25 +749,26 @@ void Invalid :: processorWr(Cache *c, aca_cache_line *c_line, int addr, int data
 {
 	//Issue a BusRdX on the bus
 	c->Port_Bus->readx(c->cache_id, addr, data);
-	//c_line -> setCurrent(new Modified);
-	//delete this;
 }
 
 
 void Invalid :: isShared(Cache *c, aca_cache_line *c_line) 
 {
+	//state change from Invalid to Shared if cache line is shared
 	c_line -> setCurrent(new Shared);
 	delete this;
 }
 
 void Invalid :: notShared(Cache *c, aca_cache_line *c_line) 
 {
+	//state change from Invalid to Exclusive if cache line is not shared
 	c_line -> setCurrent(new Exclusive);
 	delete this;
 }
 
 void Invalid :: memWriteDone(Cache *c, aca_cache_line *c_line) 
 {
+	//state change from Invalid to modified at the end of RDX 
 	c_line -> setCurrent(new Modified);
 	delete this;
 }
@@ -857,13 +788,6 @@ void Cache::snoop()
 			// Fetch the address on the bus to check its local cache
 			int addr= Port_BusAddr.read().to_int();
 			int req = Port_BusReq.read().to_int();
-#if 0
-			aca_cache_line *c_line;
-			sc_uint<20> tag = 0;
-			unsigned int line_index;
-			line_index = (addr & 0x00000FE0) >> 5;
-			tag = addr >> 12;
-#endif
 
 			switch(req)
 			{
@@ -917,11 +841,7 @@ aca_cache_line* Cache::updateLRU(int addr, bool *hit_check)
 	unsigned int line_index;
 	line_index = (addr & 0x00000FE0) >> 5;
 	tag = addr >> 12;
-	//bool hit   = false;
 	int hit_set = -1;
-
-	//line_index = (addr & 0x00000FE0) >> 5;
-	//tag = addr >> 12;
 
 	for ( int i=0; i <CACHE_SETS; i++ ){
 		c_line = &(cache->cache_set[i].cache_line[line_index]);
@@ -1114,36 +1034,7 @@ class Bus : public Bus_if,public sc_module
 			return true;
 
 		}
-#if 0
-		virtual bool write(int writer, int addr, int data) 
-		{
-			//Try to acquire the bus
-			while(bus.trylock() == -1){
-				//Retry after 1 cycle
-				waits++;
-				wait();
-			}
 
-			writes++;
-
-			Port_BusAddr.write(addr);
-			Port_BusWriter.write(writer);
-			Port_BusReq.write(Cache::BUS_WR);
-
-			//wait for everyone to revieve
-			wait();
-
-			// Pull ports to tristate for future writes
-			Port_BusReq.write("ZZZZZZZZZZZZZZZZZZZZZ");
-			Port_BusAddr.write("ZZZZZZZZZZZZZZZZZZZZZ");
-			Port_BusWriter.write("ZZZZZZZZZZZZZZZZZZZZZ");
-
-			// Release the lock
-			bus.unlock();
-
-			return true;
-		}
-#endif
 		virtual bool readx(int writer, int addr, int data) 
 		{
 			//Try to acquire the bus
@@ -1232,9 +1123,6 @@ class Bus : public Bus_if,public sc_module
 			bus.unlock();
 			return true;
 		}
-
-
-
 
 
 };
@@ -1458,16 +1346,6 @@ int sc_main(int argc, char* argv[])
 		stats_print();
 		cout<<endl;
 
-#if 0
-		printf("CPU\tSnoopedReads\tSnoopedWrites\tSnoopedFlushes\tSnoopedUpgrades\n");
-
-		for(unsigned int i =0; i < num_cpus; i++)
-		{
-
-			printf("%d\t%d\t\t%d\t\t%d\t\t%d\t\n", i, ProbeReads,ProbeWrites,ProbeFlushes,ProbeUpgrades);
-		}
-		cout<<endl;
-#endif
 
 		printf("CPU\tProbeBusRd\tProbeBusRdX\tProbeUpgrades\n");
 
